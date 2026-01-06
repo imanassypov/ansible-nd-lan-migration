@@ -36,6 +36,7 @@
     - {{ switch_name }}
   type: {{ iface.type }}
   deploy: true
+  state: {{ iface.state | default('merged') }}
   profile:
     mtu: {{ iface.mtu | default('default') }}
 {% if iface.mode == 'trunk' %}
@@ -71,6 +72,7 @@
     - {{ switch_name }}
   type: {{ iface.type }}
   deploy: true
+  state: {{ iface.state | default('merged') }}
   profile:
 {% if iface.type == 'svi' %}
     mode: {{ iface.mode | default('vlan') }}
