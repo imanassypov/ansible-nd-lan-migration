@@ -1,0 +1,254 @@
+---
+# Playbook: 1.4-preprovision-vlan-policies.yml
+# Purpose: Configure VLAN policies on pre-provisioned switches via NDFC
+#
+# Description:
+#   This playbook configures VLAN policies on switches by:
+#   1. Filtering switches with add_to_fabric: true
+#   2. Loading vlan_database.yml to get VLANs per switch
+#   3. Querying existing VLAN policies on NDFC (idempotency check)
+#   4. Calling the policies/bulk-create API for each missing VLAN
+#
+# Variables Required (per switch in hosts.yml):
+#   - add_to_fabric: Set to true to include switch in provisioning
+#   - destination_switch_sn: Target switch serial number
+#   - fabric: Fabric name the switch belongs to
+#
+# Variables from vlan_database.yml:
+#   - vlans: List of VLANs with vlan_id, name, switches
+#
+# API Endpoints Used:
+#   - GET /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/switches/<serial>
+#   - POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create
+#
+# Templates Used:
+#   - 1.4-provision-vlan-policies.json.j2: Jinja2 template for VLAN policy JSON payload
+#
+# Tags:
+#   - preprovision-vlan-policies: Run only VLAN policy provisioning tasks
+#
+# Example Usage:
+#   ansible-playbook ./playbooks/provision-access/1.4-preprovision-vlan-policies.yml
+#   ansible-playbook ./playbooks/provision-access/1.4-preprovision-vlan-policies.yml --tags preprovision-vlan-policies
+
+- name: Configure VLAN Policies on Pre-provisioned Switches
+  hosts: nexus_dashboard
+  gather_facts: false
+
+  tags:
+    - preprovision-vlan-policies
+
+  tasks:
+
+    # ========================================================================
+    # Phase 1: Build list of switches to provision
+    # ========================================================================
+
+    - name: Build list of switches to provision
+      ansible.builtin.set_fact:
+        switches_to_provision: >-
+          {{
+            groups['switches'] | default([])
+            | map('extract', hostvars)
+            | selectattr('add_to_fabric', 'defined')
+            | selectattr('add_to_fabric', 'equalto', true)
+            | list
+          }}
+
+    # ========================================================================
+    # Phase 2: Load VLAN database from all fabrics
+    # ========================================================================
+
+    - name: Find all vlan_database.yml files
+      ansible.builtin.find:
+        paths: "{{ playbook_dir }}/../../fabrics"
+        patterns: "vlan_database.yml"
+        recurse: true
+      register: vlan_database_files
+      when: switches_to_provision | length > 0
+
+    - name: Load VLAN database from all fabrics
+      ansible.builtin.include_vars:
+        file: "{{ item.path }}"
+        name: "vlan_data_{{ item.path | dirname | basename }}"
+      loop: "{{ vlan_database_files.files | default([]) }}"
+      loop_control:
+        label: "{{ item.path | dirname | basename }}"
+      when: switches_to_provision | length > 0
+
+    # Build lookup: {switch_ip: [{vlan_id, name}, ...]}
+    - name: Build switch-to-VLAN lookup
+      ansible.builtin.set_fact:
+        switch_vlan_lookup: |
+          {%- set lookup = {} -%}
+          {%- for file in vlan_database_files.files | default([]) -%}
+            {%- set fabric_name = file.path | dirname | basename -%}
+            {%- set var_name = 'vlan_data_' + fabric_name -%}
+            {%- if hostvars[inventory_hostname][var_name] is defined -%}
+              {%- set vlan_data = hostvars[inventory_hostname][var_name] -%}
+              {%- if vlan_data.vlans is defined -%}
+                {%- for vlan in vlan_data.vlans -%}
+                  {%- for switch_ip in vlan.switches | default([]) -%}
+                    {%- if switch_ip not in lookup -%}
+                      {%- set _ = lookup.update({switch_ip: []}) -%}
+                    {%- endif -%}
+                    {%- set _ = lookup[switch_ip].append({'vlan_id': vlan.vlan_id, 'name': vlan.name}) -%}
+                  {%- endfor -%}
+                {%- endfor -%}
+              {%- endif -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ lookup }}
+      when: switches_to_provision | length > 0
+
+    # ========================================================================
+    # Phase 3: Build VLAN policy configurations
+    # ========================================================================
+
+    - name: Build VLAN policy configurations
+      ansible.builtin.set_fact:
+        vlan_policies: |
+          {%- set policies = [] -%}
+          {%- for switch in switches_to_provision -%}
+            {%- set hostname = switch.inventory_hostname -%}
+            {%- set serial = switch.destination_switch_sn | default('') -%}
+            {%- set switch_ip = switch.ansible_host -%}
+            {%- if serial and switch_ip in switch_vlan_lookup -%}
+              {%- set vlans = switch_vlan_lookup[switch_ip] -%}
+              {%- for vlan in vlans -%}
+                {%- set policy = {
+                  'hostname': hostname,
+                  'serial_number': serial,
+                  'vlan_id': vlan.vlan_id,
+                  'vlan_name': vlan.name
+                } -%}
+                {%- set _ = policies.append(policy) -%}
+              {%- endfor -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ policies }}
+      when: switches_to_provision | length > 0
+
+    # ========================================================================
+    # Phase 4: Idempotency - Query existing VLAN policies
+    # ========================================================================
+
+    - name: Get unique serial numbers from VLAN policies
+      ansible.builtin.set_fact:
+        unique_serials: "{{ vlan_policies | map(attribute='serial_number') | unique | list }}"
+      when:
+        - vlan_policies is defined
+        - vlan_policies | length > 0
+
+    - name: Query existing policies for each switch
+      cisco.nd.nd_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_ssh_pass }}"
+        use_ssl: "{{ ansible_httpapi_use_ssl }}"
+        validate_certs: "{{ ansible_httpapi_validate_certs }}"
+        use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/switches/{{ item }}"
+        method: GET
+      loop: "{{ unique_serials | default([]) }}"
+      loop_control:
+        label: "{{ item }}"
+      when:
+        - unique_serials is defined
+        - unique_serials | length > 0
+      register: existing_policies_query
+      ignore_errors: true
+
+    # Build lookup: {serial: [vlan_ids already configured]}
+    - name: Build set of existing VLAN policies per serial
+      ansible.builtin.set_fact:
+        existing_vlans_lookup: |
+          {%- set lookup = {} -%}
+          {%- for result in existing_policies_query.results | default([]) -%}
+            {%- if result.current is defined and result.current is iterable -%}
+              {%- set serial = result.item -%}
+              {%- set vlan_ids = [] -%}
+              {%- for policy in result.current -%}
+                {%- if policy.templateName is defined and policy.templateName == 'create_vlan' -%}
+                  {%- if policy.nvPairs is defined and policy.nvPairs.VLAN is defined -%}
+                    {%- set _ = vlan_ids.append(policy.nvPairs.VLAN | int) -%}
+                  {%- endif -%}
+                {%- endif -%}
+              {%- endfor -%}
+              {%- set _ = lookup.update({serial: vlan_ids}) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ lookup }}
+      when: existing_policies_query is defined
+
+    - name: Filter out already configured VLAN policies
+      ansible.builtin.set_fact:
+        vlan_policies_filtered: |
+          {%- set filtered = [] -%}
+          {%- for policy in vlan_policies -%}
+            {%- set serial = policy.serial_number -%}
+            {%- set existing = existing_vlans_lookup.get(serial, []) -%}
+            {%- if policy.vlan_id not in existing -%}
+              {%- set _ = filtered.append(policy) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ filtered }}
+      when:
+        - vlan_policies is defined
+        - existing_vlans_lookup is defined
+
+    - name: Display VLAN policies to configure (after filtering existing)
+      ansible.builtin.debug:
+        msg: |
+          VLAN policies to configure (excluding existing): {{ vlan_policies_filtered | length }}
+          Already configured (skipped): {{ (vlan_policies | length) - (vlan_policies_filtered | length) }}
+          {% for policy in vlan_policies_filtered[:10] %}
+          - {{ policy.hostname }}: VLAN {{ policy.vlan_id }} ({{ policy.vlan_name }})
+          {% endfor %}
+          {% if vlan_policies_filtered | length > 10 %}
+          ... and {{ vlan_policies_filtered | length - 10 }} more
+          {% endif %}
+      when: vlan_policies_filtered is defined
+
+    # ========================================================================
+    # Phase 5: Configure VLAN policies via NDFC API
+    # ========================================================================
+
+    - name: Configure VLAN policies on switches
+      cisco.nd.nd_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_ssh_pass }}"
+        use_ssl: "{{ ansible_httpapi_use_ssl }}"
+        validate_certs: "{{ ansible_httpapi_validate_certs }}"
+        use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create"
+        method: POST
+        content: "{{ lookup('template', playbook_dir + '/../../templates/1.5-provision-vlan-policies.json.j2') }}"
+      loop: "{{ vlan_policies_filtered }}"
+      loop_control:
+        label: "{{ item.hostname }}: VLAN {{ item.vlan_id }}"
+      vars:
+        serial_number: "{{ item.serial_number }}"
+        vlan_id: "{{ item.vlan_id }}"
+        vlan_name: "{{ item.vlan_name }}"
+      when:
+        - vlan_policies_filtered is defined
+        - vlan_policies_filtered | length > 0
+      register: vlan_policy_results
+
+    - name: Display VLAN policy configuration results
+      ansible.builtin.debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════════════════
+          VLAN POLICY CONFIGURATION RESULTS
+          ═══════════════════════════════════════════════════════════════════════
+          Already existed (skipped): {{ (vlan_policies | default([]) | length) - (vlan_policies_filtered | default([]) | length) }}
+          Configured this run: {{ vlan_policy_results.results | default([]) | rejectattr('skipped', 'defined') | list | length }}
+          {% for result in vlan_policy_results.results | default([]) %}
+          {% if result.skipped is not defined or not result.skipped %}
+          {{ '✓' if result.failed is not defined or not result.failed else '✗' }} {{ result.item.hostname }}: VLAN {{ result.item.vlan_id }}
+          {% endif %}
+          {% endfor %}
+          ═══════════════════════════════════════════════════════════════════════
+      when: vlan_policy_results is defined

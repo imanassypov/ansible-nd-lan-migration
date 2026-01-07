@@ -1,0 +1,45 @@
+{#
+================================================================================
+Template: Bootstrap Switch Configuration (JSON Payload)
+================================================================================
+Purpose:
+  Generate JSON payload for the NDFC REST API to bootstrap a switch that has
+  connected via POAP.
+
+API Endpoint:
+  POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/<fabric>/inventory/poap
+
+Input Variables:
+  serial_number              - Switch serial number
+  model                      - Switch model (e.g., N9K-C9300v)
+  version                    - NX-OS version (e.g., 10.6(1))
+  hostname                   - Target hostname for the switch
+  ip_address                 - Management IP address
+  password                   - Switch admin password
+  role                       - Switch role (access, aggregation, etc.)
+  gateway                    - Default gateway with prefix (e.g., 198.18.24.65/26)
+  poap_data                  - POAP data from discovery (JSON string)
+  fingerprint                - SSH fingerprint from POAP discovery
+  public_key                 - SSH public key from POAP discovery
+
+Notes:
+  - reAdd is set to true to re-import the switch with updated configuration
+  - discoveryAuthProtocol: 0 for password auth
+================================================================================
+#}
+[
+  {
+    "serialNumber": "{{ serial_number }}",
+    "model": "{{ model }}",
+    "version": "{{ version }}",
+    "hostname": "{{ hostname }}",
+    "ipAddress": "{{ ip_address }}",
+    "password": "{{ password }}",
+    "discoveryAuthProtocol": 0,
+    "data": "{{ poap_data | default('{}') | regex_replace('\"', '\\\"') if poap_data is string else poap_data | to_json | regex_replace('\"', '\\\"') }}",
+    "fingerprint": "{{ fingerprint | default('') }}",
+    "publicKey": "{{ public_key | default('') }}",
+    "reAdd": true,
+    "role": "{{ role }}"
+  }
+]

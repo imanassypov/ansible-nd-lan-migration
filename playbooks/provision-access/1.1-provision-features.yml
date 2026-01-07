@@ -23,7 +23,7 @@
 #   - POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create
 #
 # Templates Used:
-#   - feature_policy.json.j2: Jinja2 template for feature policy JSON payload
+#   - 1.1-provision-features.json.j2: Jinja2 template for feature policy JSON payload
 #
 # Tags:
 #   - preprovision-features: Run only feature provisioning tasks
@@ -53,23 +53,10 @@
             | list
           }}
 
-    - name: Display switches to provision features
-      ansible.builtin.debug:
-        msg: |
-          Switches to provision features: {{ switches_to_provision | length }}
-          {% for switch in switches_to_provision %}
-          - {{ switch.inventory_hostname }}: serial={{ switch.destination_switch_sn | default('N/A') }}
-          {% endfor %}
-
     # Load feature lookup table
     - name: Load feature lookup table
       ansible.builtin.include_vars:
         file: "{{ playbook_dir }}/../../templates/feature_lookup.yml"
-      when: switches_to_provision | length > 0
-
-    - name: Display feature lookup table
-      ansible.builtin.debug:
-        var: feature_lookup
       when: switches_to_provision | length > 0
 
     # Load switch features from all fabrics
@@ -110,11 +97,6 @@
           {{ lookup }}
       when: switches_to_provision | length > 0
 
-    - name: Display switch features lookup
-      ansible.builtin.debug:
-        var: switch_features_lookup
-      when: switches_to_provision | length > 0
-
     # Build feature policy list for each switch
     - name: Build feature policy configurations
       ansible.builtin.set_fact:
@@ -140,17 +122,6 @@
           {%- endfor -%}
           {{ policies }}
       when: switches_to_provision | length > 0
-
-    - name: Display feature policies to configure
-      ansible.builtin.debug:
-        msg: |
-          Feature policies to configure: {{ feature_policies | length }}
-          {% for policy in feature_policies %}
-          - {{ policy.hostname }}: {{ policy.feature }} -> {{ policy.template_name }}
-          {% endfor %}
-      when: 
-        - switches_to_provision | length > 0
-        - feature_policies is defined
 
     # Query existing policies per switch to make playbook idempotent
     - name: Get unique serial numbers from feature policies
@@ -235,7 +206,7 @@
         use_proxy: "{{ ansible_httpapi_use_proxy }}"
         path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create"
         method: POST
-        content: "{{ lookup('template', '../../templates/feature_policy.json.j2') }}"
+        content: "{{ lookup('template', '../../templates/1.1-provision-features.json.j2') }}"
       loop: "{{ feature_policies_filtered }}"
       loop_control:
         label: "{{ item.hostname }}: {{ item.feature }}"

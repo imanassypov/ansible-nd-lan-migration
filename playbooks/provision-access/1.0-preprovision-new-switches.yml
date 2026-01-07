@@ -16,7 +16,7 @@
 #   - destination_switch_sn: Target switch serial number
 #   - destination_switch_model: Target switch model (e.g., N9K-C9300v)
 #   - destination_switch_version: Target NX-OS version (e.g., 10.6(1))
-#   - destination_switch_ip_addr: Target switch management IP address
+#   - ansible_host: Target switch management IP address
 #
 # Variables from mgmt_interface.yml:
 #   - mgmt_static_default: Default gateway for the management interface
@@ -26,7 +26,7 @@
 #   - POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/<fabric>/inventory/poap
 #
 # Templates Used:
-#   - preprovision_switch.json.j2: Jinja2 template for POAP API JSON payload
+#   - 1.0-preprovision-new-switches.json.j2: Jinja2 template for POAP API JSON payload
 #
 # Tags:
 #   - preprovision-switches: Run only switch pre-provisioning tasks
@@ -55,14 +55,6 @@
             | selectattr('add_to_fabric', 'equalto', true)
             | list
           }}
-
-    - name: Display switches to pre-provision
-      ansible.builtin.debug:
-        msg: |
-          Switches to pre-provision: {{ switches_to_preprovision | length }}
-          {% for switch in switches_to_preprovision %}
-          - {{ switch.inventory_hostname }}: fabric={{ switch.fabric }}, role={{ switch.role }}
-          {% endfor %}
 
     # Load management interface data for each fabric
     - name: Find all mgmt_interface.yml files
@@ -102,11 +94,6 @@
           {{ lookup }}
       when: switches_to_preprovision | length > 0
 
-    - name: Display management interface lookup
-      ansible.builtin.debug:
-        var: mgmt_interface_lookup
-      when: switches_to_preprovision | length > 0
-
     # Build pre-provision profiles for each switch
     - name: Build pre-provision profiles
       ansible.builtin.set_fact:
@@ -117,7 +104,7 @@
             {%- if switch.destination_switch_sn is defined and 
                    switch.destination_switch_model is defined and
                    switch.destination_switch_version is defined and
-                   switch.destination_switch_ip_addr is defined and
+                   switch.ansible_host is defined and
                    mgmt_interface_lookup[hostname] is defined -%}
               {%- set mgmt_data = mgmt_interface_lookup[hostname] -%}
               {%- set gateway_prefix = mgmt_data.mgmt_ip_address.split('/')[1] | default('24') -%}
@@ -128,7 +115,7 @@
                 'serial_number': switch.destination_switch_sn,
                 'model': switch.destination_switch_model,
                 'version': switch.destination_switch_version,
-                'ip_address': switch.destination_switch_ip_addr,
+                'ip_address': switch.ansible_host,
                 'role': switch.role,
                 'gateway': gateway
               } -%}
@@ -136,11 +123,6 @@
             {%- endif -%}
           {%- endfor -%}
           {{ profiles }}
-      when: switches_to_preprovision | length > 0
-
-    - name: Display pre-provision profiles
-      ansible.builtin.debug:
-        var: preprovision_profiles
       when: switches_to_preprovision | length > 0
 
     # Group profiles by fabric for batch API calls
@@ -158,13 +140,6 @@
       when: 
         - switches_to_preprovision | length > 0
         - preprovision_profiles | length > 0
-
-    - name: Display pre-provision profiles grouped by fabric
-      ansible.builtin.debug:
-        var: preprovision_by_fabric
-      when: 
-        - switches_to_preprovision | length > 0
-        - preprovision_by_fabric is defined
 
     # Query existing pre-provisioned switches to make playbook idempotent
     - name: Query existing switches in each fabric
@@ -240,7 +215,7 @@
         use_proxy: "{{ ansible_httpapi_use_proxy }}"
         path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{{ item.key }}/inventory/poap"
         method: POST
-        content: "{{ lookup('template', '../../templates/preprovision_switch.json.j2') }}"
+        content: "{{ lookup('template', '../../templates/1.0-preprovision-new-switches.json.j2') }}"
       loop: "{{ preprovision_by_fabric_filtered | dict2items }}"
       loop_control:
         label: "{{ item.key }} ({{ item.value | length }} switches)"

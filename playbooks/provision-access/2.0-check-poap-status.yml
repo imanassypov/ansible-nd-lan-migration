@@ -1,0 +1,191 @@
+---
+# Playbook: 1.7-check-poap-status.yml
+# Purpose: Check if pre-provisioned switches have connected to NDFC via POAP
+#
+# Description:
+#   This playbook checks the POAP inventory to see if pre-provisioned switches
+#   have booted and connected to NDFC. It queries the POAP endpoint and matches
+#   serial numbers against the switches configured with add_to_fabric: true.
+#
+# Prerequisites:
+#   - Run 1.0-1.5 playbooks to pre-provision the switch
+#   - Switch has been powered on and is going through POAP process
+#
+# Variables Required (per switch in hosts.yml):
+#   - add_to_fabric: Set to true to include switch in check
+#   - fabric: Target fabric name
+#   - destination_switch_sn: Target switch serial number to look for
+#
+# API Endpoints Used:
+#   - GET /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/<fabric>/inventory/poap
+#
+# Tags:
+#   - check-poap-status: Run POAP status check
+#
+# Example Usage:
+#   ansible-playbook ./playbooks/provision-access/1.7-check-poap-status.yml
+#   ansible-playbook ./playbooks/provision-access/1.7-check-poap-status.yml -v
+
+- name: Check POAP Status for Pre-provisioned Switches
+  hosts: nexus_dashboard
+  gather_facts: false
+
+  tags:
+    - check-poap-status
+
+  tasks:
+
+    # Build list of switches to check
+    - name: Build list of switches to check
+      ansible.builtin.set_fact:
+        switches_to_check: >-
+          {{
+            groups['switches'] | default([])
+            | map('extract', hostvars)
+            | selectattr('add_to_fabric', 'defined')
+            | selectattr('add_to_fabric', 'equalto', true)
+            | list
+          }}
+
+    # Get unique fabrics from switches to check
+    - name: Get unique fabrics from switches to check
+      ansible.builtin.set_fact:
+        unique_fabrics: "{{ switches_to_check | map(attribute='fabric') | unique | list }}"
+      when: switches_to_check | length > 0
+
+    # Query POAP inventory for each fabric
+    - name: Query POAP inventory for each fabric
+      cisco.nd.nd_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_ssh_pass }}"
+        use_ssl: "{{ ansible_httpapi_use_ssl }}"
+        validate_certs: "{{ ansible_httpapi_validate_certs }}"
+        use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{{ item }}/inventory/poap"
+        method: GET
+      loop: "{{ unique_fabrics | default([]) }}"
+      loop_control:
+        label: "{{ item }}"
+      when:
+        - unique_fabrics is defined
+        - unique_fabrics | length > 0
+      register: poap_inventory_query
+      ignore_errors: true
+
+    # Build lookup of POAP-connected switches per fabric
+    - name: Build lookup of POAP-connected switches
+      ansible.builtin.set_fact:
+        poap_switches_lookup: |
+          {%- set lookup = {} -%}
+          {%- for result in poap_inventory_query.results | default([]) -%}
+            {%- if result.current is defined and result.current is iterable and result.current is not string -%}
+              {%- set fabric = result.item -%}
+              {%- set switches = {} -%}
+              {%- for switch in result.current -%}
+                {%- if switch.serialNumber is defined -%}
+                  {%- set _ = switches.update({switch.serialNumber: switch}) -%}
+                {%- endif -%}
+              {%- endfor -%}
+              {%- set _ = lookup.update({fabric: switches}) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ lookup }}
+      when: poap_inventory_query is defined
+
+    # Check each switch's POAP status
+    - name: Check POAP status for each switch
+      ansible.builtin.set_fact:
+        poap_status_results: |
+          {%- set results = [] -%}
+          {%- for switch in switches_to_check -%}
+            {%- set hostname = switch.inventory_hostname -%}
+            {%- set serial = switch.destination_switch_sn | default('') -%}
+            {%- set fabric = switch.fabric | default('') -%}
+            {%- set fabric_switches = poap_switches_lookup.get(fabric, {}) -%}
+            {%- set poap_data = fabric_switches.get(serial, none) -%}
+            {%- if poap_data -%}
+              {%- set status = {
+                'hostname': hostname,
+                'serial_number': serial,
+                'fabric': fabric,
+                'connected': true,
+                'poap_hostname': poap_data.hostName | default('unknown'),
+                'poap_ip': poap_data.ipAddress | default('unknown'),
+                'poap_model': poap_data.model | default('unknown'),
+                'poap_version': poap_data.version | default('unknown'),
+                'poap_status': poap_data.status | default('unknown')
+              } -%}
+            {%- else -%}
+              {%- set status = {
+                'hostname': hostname,
+                'serial_number': serial,
+                'fabric': fabric,
+                'connected': false
+              } -%}
+            {%- endif -%}
+            {%- set _ = results.append(status) -%}
+          {%- endfor -%}
+          {{ results }}
+      when:
+        - switches_to_check | length > 0
+        - poap_switches_lookup is defined
+
+    # Display POAP status results
+    - name: Display POAP connection status
+      ansible.builtin.debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════════════════
+          POAP CONNECTION STATUS
+          ═══════════════════════════════════════════════════════════════════════
+
+          {% set connected = poap_status_results | selectattr('connected', 'equalto', true) | list %}
+          {% set pending = poap_status_results | selectattr('connected', 'equalto', false) | list %}
+          CONNECTED ({{ connected | length }}):
+          {% if connected | length > 0 %}
+          {% for switch in connected %}
+          ✓ {{ switch.hostname }} ({{ switch.serial_number }})
+            ├─ Fabric: {{ switch.fabric }}
+            ├─ POAP Hostname: {{ switch.poap_hostname }}
+            ├─ IP Address: {{ switch.poap_ip }}
+            ├─ Model: {{ switch.poap_model }}
+            ├─ Version: {{ switch.poap_version }}
+            └─ Status: {{ switch.poap_status }}
+          {% endfor %}
+          {% else %}
+            (none)
+          {% endif %}
+
+          PENDING ({{ pending | length }}):
+          {% if pending | length > 0 %}
+          {% for switch in pending %}
+          ✗ {{ switch.hostname }} ({{ switch.serial_number }})
+            └─ Fabric: {{ switch.fabric }} - Waiting for POAP connection...
+          {% endfor %}
+          {% else %}
+            (none)
+          {% endif %}
+
+          ═══════════════════════════════════════════════════════════════════════
+      when: poap_status_results is defined
+
+    # Set fact for connected switches (useful for subsequent playbooks)
+    - name: Set connected switches fact
+      ansible.builtin.set_fact:
+        connected_switches: "{{ poap_status_results | selectattr('connected', 'equalto', true) | list }}"
+        pending_switches: "{{ poap_status_results | selectattr('connected', 'equalto', false) | list }}"
+      when: poap_status_results is defined
+
+    # Fail if no switches connected (optional - controlled by variable)
+    - name: Check if all switches connected
+      ansible.builtin.debug:
+        msg: |
+          {% if pending_switches | length > 0 %}
+          WARNING: {{ pending_switches | length }} switch(es) still pending POAP connection.
+          Ensure switches are powered on and have network connectivity to NDFC.
+          {% else %}
+          SUCCESS: All {{ connected_switches | length }} switch(es) have connected via POAP!
+          {% endif %}
+      when:
+        - connected_switches is defined
+        - pending_switches is defined
