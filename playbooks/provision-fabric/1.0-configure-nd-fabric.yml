@@ -24,7 +24,7 @@
 #   - POST /api/v1/manage/fabrics: Create new fabrics
 #
 # Templates Used:
-#   - create_fabric.json.j2: Jinja2 template that converts fabric variables to ND API JSON format
+#   - 02-configure-nd-fabric.json.j2: Jinja2 template that converts fabric variables to ND API JSON format
 #
 # Tags:
 #   - configure-fabrics: Run only fabric configuration tasks
@@ -58,24 +58,29 @@
 
     # Task 2: Show which fabrics are already configured on ND
     - name: Display Existing Fabrics
-      debug:
-        msg: 
-          - "Currently configured fabrics:"
-          - "{{ existing_fabrics.current.fabrics | map(attribute='name') | list }}"
+      ansible.builtin.debug:
+        msg: |
+          Currently configured fabrics: {{ existing_fabrics.current.fabrics | map(attribute='name') | list | length }}
+          {% for fabric in existing_fabrics.current.fabrics | map(attribute='name') | list %}
+          - {{ fabric }}
+          {% endfor %}
 
     # Task 3: Filter nd_fabrics to only include fabrics not already on ND
     # This prevents errors from attempting to create duplicate fabrics
     - name: Create List of Fabrics to Deploy
-      set_fact:
+      ansible.builtin.set_fact:
         existing_fabric_names: "{{ existing_fabrics.current.fabrics | map(attribute='name') | list }}"
         fabrics_to_deploy: "{{ nd_fabrics | rejectattr('FABRIC_NAME', 'in', existing_fabrics.current.fabrics | map(attribute='name') | list) | list }}"
 
     # Task 4: Show which fabrics will be created (empty list if all exist)
     - name: Display Fabrics to Deploy
-      debug:
-        msg:
-          - "Fabrics to be deployed:"
-          - "{{ fabrics_to_deploy | map(attribute='FABRIC_NAME') | list }}"
+      ansible.builtin.debug:
+        msg: |
+          Fabrics to be deployed: {{ fabrics_to_deploy | length }}
+          Already configured (skipped): {{ (nd_fabrics | length) - (fabrics_to_deploy | length) }}
+          {% for fabric in fabrics_to_deploy %}
+          - {{ fabric.FABRIC_NAME }}
+          {% endfor %}
 
     # Task 5: Create new fabrics on ND using REST API
     # Only runs for fabrics in fabrics_to_deploy list
@@ -91,8 +96,25 @@
         login_domain: "{{ ansible_httpapi_login_domain | default('local') }}"
         path: /api/v1/manage/fabrics
         method: POST
-        content: "{{ lookup('template', '../templates/create_fabric.json.j2') }}"
+        content: "{{ lookup('template', '../../templates/02-configure-nd-fabric.json.j2') }}"
       loop: "{{ fabrics_to_deploy }}"
+      loop_control:
+        label: "{{ item.FABRIC_NAME }}"
+      when:
+        - fabrics_to_deploy is defined
+        - fabrics_to_deploy | length > 0
       register: fabric_config_result
+
+    - name: Display fabric configuration results
+      ansible.builtin.debug:
+        msg: |
+          Fabric configuration complete.
+          Already existed (skipped): {{ (nd_fabrics | length) - (fabrics_to_deploy | default([]) | length) }}
+          {% for result in fabric_config_result.results | default([]) %}
+          {% if result.skipped is not defined or not result.skipped %}
+          - {{ result.item.FABRIC_NAME }}: {{ 'SUCCESS' if result.failed is not defined or not result.failed else 'FAILED' }}
+          {% endif %}
+          {% endfor %}
+      when: fabric_config_result is defined
 
 #  TODO add a step that can do Update to an existing fabric using PUT

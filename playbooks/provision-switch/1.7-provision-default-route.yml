@@ -1,0 +1,234 @@
+---
+# Playbook: 1.5-preprovision-default-route.yml
+# Purpose: Configure default static route on pre-provisioned switches via NDFC
+#
+# Description:
+#   This playbook configures default static routes on switches by:
+#   1. Loading mgmt_interface.yml to find default gateway configuration
+#   2. Filtering switches with add_to_fabric: true
+#   3. Creating static route policy via bulk-create API
+#
+# Prerequisites:
+#   - Run 1.4-preprovision-svi.yml first to configure management SVI
+#   - Run discovery playbook to generate mgmt_interface.yml
+#
+# Variables Required (per switch in hosts.yml):
+#   - add_to_fabric: Set to true to include switch in provisioning
+#   - fabric: Target fabric name
+#   - destination_switch_sn: Target switch serial number
+#
+# Variables from mgmt_interface.yml:
+#   - switches.<hostname>.mgmt_static_default: Default gateway IP (e.g., 198.18.24.65)
+#   - switches.<hostname>.mgmt_interface_vrf: VRF for the route
+#
+# API Endpoints Used:
+#   - POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create
+#   - GET /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/switches/<serial>
+#
+# Templates Used:
+#   - 1.6-provision-default-route.json.j2: JSON template for static route policy
+#
+# Tags:
+#   - preprovision-default-route: Run only default route provisioning tasks
+#
+# Example Usage:
+#   ansible-playbook ./playbooks/provision-access/1.5-preprovision-default-route.yml
+#   ansible-playbook ./playbooks/provision-access/1.5-preprovision-default-route.yml --tags preprovision-default-route
+
+- name: Configure Default Routes on Pre-provisioned Switches
+  hosts: nexus_dashboard
+  gather_facts: false
+
+  tags:
+    - preprovision-default-route
+
+  tasks:
+
+    # Build list of switches to provision
+    - name: Build list of switches to provision
+      ansible.builtin.set_fact:
+        switches_to_provision: >-
+          {{
+            groups['switches'] | default([])
+            | map('extract', hostvars)
+            | selectattr('add_to_fabric', 'defined')
+            | selectattr('add_to_fabric', 'equalto', true)
+            | list
+          }}
+
+    # Load management interface data from all fabrics
+    - name: Find all mgmt_interface.yml files
+      ansible.builtin.find:
+        paths: "{{ playbook_dir }}/../../fabrics"
+        patterns: "mgmt_interface.yml"
+        recurse: true
+      register: mgmt_interface_files
+      when: switches_to_provision | length > 0
+
+    - name: Load management interface data from all fabrics
+      ansible.builtin.include_vars:
+        file: "{{ item.path }}"
+        name: "mgmt_data_{{ item.path | dirname | basename }}"
+      loop: "{{ mgmt_interface_files.files | default([]) }}"
+      loop_control:
+        label: "{{ item.path | dirname | basename }}"
+      when: switches_to_provision | length > 0
+
+    # Build consolidated management interface lookup
+    - name: Build consolidated management interface lookup
+      ansible.builtin.set_fact:
+        mgmt_interface_lookup: |
+          {%- set lookup = {} -%}
+          {%- for file in mgmt_interface_files.files | default([]) -%}
+            {%- set fabric_name = file.path | dirname | basename -%}
+            {%- set var_name = 'mgmt_data_' + fabric_name -%}
+            {%- if hostvars[inventory_hostname][var_name] is defined -%}
+              {%- set fabric_data = hostvars[inventory_hostname][var_name] -%}
+              {%- if fabric_data.switches is defined -%}
+                {%- for hostname, data in fabric_data.switches.items() -%}
+                  {%- set _ = lookup.update({hostname: data | combine({'fabric': fabric_name})}) -%}
+                {%- endfor -%}
+              {%- endif -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ lookup }}
+      when: switches_to_provision | length > 0
+
+    # Extract static route configurations
+    - name: Build static route configurations
+      ansible.builtin.set_fact:
+        static_routes: |
+          {%- set routes = [] -%}
+          {%- for switch in switches_to_provision -%}
+            {%- set hostname = switch.inventory_hostname -%}
+            {%- set serial = switch.destination_switch_sn | default('') -%}
+            {%- set fabric = switch.fabric | default('') -%}
+            {%- if serial and hostname in mgmt_interface_lookup -%}
+              {%- set mgmt_data = mgmt_interface_lookup[hostname] -%}
+              {%- if mgmt_data.mgmt_static_default is defined and mgmt_data.mgmt_static_default -%}
+                {%- set next_hop = mgmt_data.mgmt_static_default -%}
+                {%- set vrf = mgmt_data.mgmt_interface_vrf | default('') -%}
+                {%- if vrf == 'default' -%}
+                  {%- set vrf = '' -%}
+                {%- endif -%}
+                {%- set route = {
+                  'hostname': hostname,
+                  'serial_number': serial,
+                  'fabric_name': fabric,
+                  'next_hop': next_hop,
+                  'prefix': '0.0.0.0/0',
+                  'vrf_name': vrf,
+                  'description': 'Default route'
+                } -%}
+                {%- set _ = routes.append(route) -%}
+              {%- endif -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ routes }}
+      when: switches_to_provision | length > 0
+
+    # Query existing policies per switch to make playbook idempotent
+    - name: Get unique serial numbers from static routes
+      ansible.builtin.set_fact:
+        unique_serials: "{{ static_routes | map(attribute='serial_number') | unique | list }}"
+      when:
+        - static_routes is defined
+        - static_routes | length > 0
+
+    - name: Query existing policies for each switch
+      cisco.nd.nd_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_ssh_pass }}"
+        use_ssl: "{{ ansible_httpapi_use_ssl }}"
+        validate_certs: "{{ ansible_httpapi_validate_certs }}"
+        use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/switches/{{ item }}"
+        method: GET
+      loop: "{{ unique_serials | default([]) }}"
+      loop_control:
+        label: "{{ item }}"
+      when:
+        - unique_serials is defined
+        - unique_serials | length > 0
+      register: existing_policies_query
+      ignore_errors: true
+
+    - name: Build set of existing static route policies per serial
+      ansible.builtin.set_fact:
+        existing_static_routes_lookup: |
+          {%- set lookup = {} -%}
+          {%- for result in existing_policies_query.results | default([]) -%}
+            {%- if result.current is defined and result.current is iterable and result.current is not string -%}
+              {%- set serial = result.item -%}
+              {%- set templates = result.current | map(attribute='templateName') | list -%}
+              {%- set has_static_route = 'static_route_v4_v6' in templates -%}
+              {%- set _ = lookup.update({serial: has_static_route}) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ lookup }}
+      when: existing_policies_query is defined
+
+    - name: Filter out switches with existing static route policies
+      ansible.builtin.set_fact:
+        static_routes_filtered: |
+          {%- set filtered = [] -%}
+          {%- for route in static_routes -%}
+            {%- set serial = route.serial_number -%}
+            {%- set has_existing = existing_static_routes_lookup.get(serial, false) -%}
+            {%- if not has_existing -%}
+              {%- set _ = filtered.append(route) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ filtered }}
+      when:
+        - static_routes is defined
+        - existing_static_routes_lookup is defined
+
+    - name: Display static routes to configure (after filtering existing)
+      ansible.builtin.debug:
+        msg: |
+          Static routes to configure (excluding existing): {{ static_routes_filtered | length }}
+          Already configured (skipped): {{ (static_routes | length) - (static_routes_filtered | length) }}
+          {% for route in static_routes_filtered %}
+          - {{ route.hostname }}: {{ route.prefix }} via {{ route.next_hop }}
+          {% endfor %}
+      when: static_routes_filtered is defined
+
+    # Configure static routes via NDFC API
+    - name: Configure default static routes on switches
+      cisco.nd.nd_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_ssh_pass }}"
+        use_ssl: "{{ ansible_httpapi_use_ssl }}"
+        validate_certs: "{{ ansible_httpapi_validate_certs }}"
+        use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create"
+        method: POST
+        content: "{{ lookup('template', '../../templates/1.7-provision-default-route.json.j2') }}"
+      loop: "{{ static_routes_filtered }}"
+      loop_control:
+        label: "{{ item.hostname }}: {{ item.prefix }} via {{ item.next_hop }}"
+      vars:
+        serial_number: "{{ item.serial_number }}"
+        next_hop: "{{ item.next_hop }}"
+        prefix: "{{ item.prefix }}"
+        vrf_name: "{{ item.vrf_name }}"
+        description: "{{ item.description }}"
+      when:
+        - static_routes_filtered is defined
+        - static_routes_filtered | length > 0
+      register: route_results
+
+    - name: Display static route configuration results
+      ansible.builtin.debug:
+        msg: |
+          Static route configuration complete.
+          Already existed (skipped): {{ (static_routes | length) - (static_routes_filtered | default([]) | length) }}
+          {% for result in route_results.results | default([]) %}
+          {% if result.skipped is not defined or not result.skipped %}
+          - {{ result.item.hostname }}: {{ result.item.prefix }} via {{ result.item.next_hop }}: {{ 'SUCCESS' if result.failed is not defined or not result.failed else 'FAILED' }}
+          {% endif %}
+          {% endfor %}
+      when: route_results is defined

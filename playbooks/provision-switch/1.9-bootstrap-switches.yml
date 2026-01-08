@@ -1,0 +1,242 @@
+---
+# Playbook: 1.8-bootstrap-switches.yml
+# Purpose: Bootstrap pre-provisioned switches that have connected via POAP
+#
+# Description:
+#   This playbook bootstraps switches that have connected to NDFC via POAP by:
+#   1. Querying POAP inventory to find connected switches
+#   2. Matching connected switches against switches with add_to_fabric: true
+#   3. For each matched switch, executing the bootstrap API to complete provisioning
+#
+# Prerequisites:
+#   - Run 1.0-1.6 playbooks to pre-provision switch configuration
+#   - Switch has booted and connected to NDFC via POAP (verified by 1.7)
+#
+# Variables Required (per switch in hosts.yml):
+#   - add_to_fabric: Set to true to include switch in provisioning
+#   - fabric: Target fabric name
+#   - destination_switch_sn: Target switch serial number
+#   - destination_switch_model: Switch model
+#   - destination_switch_version: NX-OS version
+#   - ansible_host: Management IP address
+#
+# API Endpoints Used:
+#   - GET /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/<fabric>/inventory/poap
+#   - POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/<fabric>/inventory/poap
+#
+# Templates Used:
+#   - 2.1-bootstrap-switches.json.j2: JSON template for bootstrap payload
+#
+# Tags:
+#   - bootstrap-switches: Run bootstrap tasks
+#
+# Example Usage:
+#   ansible-playbook ./playbooks/provision-access/1.8-bootstrap-switches.yml
+#   ansible-playbook ./playbooks/provision-access/1.8-bootstrap-switches.yml -v
+
+- name: Bootstrap Pre-provisioned Switches via POAP
+  hosts: nexus_dashboard
+  gather_facts: false
+
+  tags:
+    - bootstrap-switches
+
+  tasks:
+
+    # Build list of switches to bootstrap
+    - name: Build list of switches to bootstrap
+      ansible.builtin.set_fact:
+        switches_to_bootstrap: >-
+          {{
+            groups['switches'] | default([])
+            | map('extract', hostvars)
+            | selectattr('add_to_fabric', 'defined')
+            | selectattr('add_to_fabric', 'equalto', true)
+            | list
+          }}
+
+    # Get unique fabrics from switches to bootstrap
+    - name: Get unique fabrics from switches to bootstrap
+      ansible.builtin.set_fact:
+        unique_fabrics: "{{ switches_to_bootstrap | map(attribute='fabric') | unique | list }}"
+      when: switches_to_bootstrap | length > 0
+
+    # Query POAP inventory for each fabric to get connected switches
+    - name: Query POAP inventory for each fabric
+      cisco.nd.nd_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_ssh_pass }}"
+        use_ssl: "{{ ansible_httpapi_use_ssl }}"
+        validate_certs: "{{ ansible_httpapi_validate_certs }}"
+        use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{{ item }}/inventory/poap"
+        method: GET
+      loop: "{{ unique_fabrics | default([]) }}"
+      loop_control:
+        label: "{{ item }}"
+      when:
+        - unique_fabrics is defined
+        - unique_fabrics | length > 0
+      register: poap_inventory_query
+      ignore_errors: true
+
+    # Build lookup of POAP-connected switches with full details
+    - name: Build lookup of POAP-connected switches
+      ansible.builtin.set_fact:
+        poap_switches_lookup: |
+          {%- set lookup = {} -%}
+          {%- for result in poap_inventory_query.results | default([]) -%}
+            {%- if result.current is defined and result.current is iterable and result.current is not string -%}
+              {%- set fabric = result.item -%}
+              {%- set switches = {} -%}
+              {%- for switch in result.current -%}
+                {%- if switch.serialNumber is defined -%}
+                  {%- set _ = switches.update({switch.serialNumber: switch}) -%}
+                {%- endif -%}
+              {%- endfor -%}
+              {%- set _ = lookup.update({fabric: switches}) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ lookup }}
+      when: poap_inventory_query is defined
+
+    # Load management interface data for gateway info
+    - name: Find all mgmt_interface.yml files
+      ansible.builtin.find:
+        paths: "{{ playbook_dir }}/../../fabrics"
+        patterns: "mgmt_interface.yml"
+        recurse: true
+      register: mgmt_interface_files
+      when: switches_to_bootstrap | length > 0
+
+    - name: Load management interface data from all fabrics
+      ansible.builtin.include_vars:
+        file: "{{ item.path }}"
+        name: "mgmt_data_{{ item.path | dirname | basename }}"
+      loop: "{{ mgmt_interface_files.files | default([]) }}"
+      loop_control:
+        label: "{{ item.path | dirname | basename }}"
+      when: switches_to_bootstrap | length > 0
+
+    - name: Build consolidated management interface lookup
+      ansible.builtin.set_fact:
+        mgmt_interface_lookup: |
+          {%- set lookup = {} -%}
+          {%- for file in mgmt_interface_files.files | default([]) -%}
+            {%- set fabric_name = file.path | dirname | basename -%}
+            {%- set var_name = 'mgmt_data_' + fabric_name -%}
+            {%- if hostvars[inventory_hostname][var_name] is defined -%}
+              {%- set fabric_data = hostvars[inventory_hostname][var_name] -%}
+              {%- if fabric_data.switches is defined -%}
+                {%- for hostname, data in fabric_data.switches.items() -%}
+                  {%- set _ = lookup.update({hostname: data | combine({'fabric': fabric_name})}) -%}
+                {%- endfor -%}
+              {%- endif -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ lookup }}
+      when: switches_to_bootstrap | length > 0
+
+    # Build bootstrap configurations for connected switches
+    - name: Build bootstrap configurations for connected switches
+      ansible.builtin.set_fact:
+        bootstrap_configs: |
+          {%- set configs = [] -%}
+          {%- for switch in switches_to_bootstrap -%}
+            {%- set hostname = switch.inventory_hostname -%}
+            {%- set serial = switch.destination_switch_sn | default('') -%}
+            {%- set fabric = switch.fabric | default('') -%}
+            {%- set fabric_switches = poap_switches_lookup.get(fabric, {}) -%}
+            {%- set poap_data = fabric_switches.get(serial, none) -%}
+            {%- if poap_data -%}
+              {%- set mgmt_data = mgmt_interface_lookup.get(hostname, {}) -%}
+              {%- set gateway_prefix = mgmt_data.mgmt_ip_address.split('/')[1] | default('24') if mgmt_data.mgmt_ip_address is defined else '24' -%}
+              {%- set gateway = mgmt_data.mgmt_static_default + '/' + gateway_prefix if mgmt_data.mgmt_static_default is defined and mgmt_data.mgmt_static_default else '' -%}
+              {%- set config = {
+                'hostname': hostname,
+                'serial_number': serial,
+                'fabric': fabric,
+                'model': switch.destination_switch_model | default(poap_data.model | default('N9K-C9300v')),
+                'version': switch.destination_switch_version | default(poap_data.version | default('10.6(1)')),
+                'ip_address': switch.ansible_host | default(''),
+                'role': switch.role | default('access'),
+                'gateway': gateway,
+                'poap_data': poap_data.data | default('{}'),
+                'fingerprint': poap_data.fingerprint | default(''),
+                'public_key': poap_data.publicKey | default('')
+              } -%}
+              {%- set _ = configs.append(config) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ configs }}
+      when:
+        - switches_to_bootstrap | length > 0
+        - poap_switches_lookup is defined
+
+    - name: Display switches ready to bootstrap
+      ansible.builtin.debug:
+        msg: |
+          Switches ready to bootstrap (connected via POAP): {{ bootstrap_configs | length }}
+          {% for config in bootstrap_configs %}
+          - {{ config.hostname }} ({{ config.serial_number }})
+            ├─ Fabric: {{ config.fabric }}
+            ├─ Model: {{ config.model }}
+            ├─ IP: {{ config.ip_address }}
+            ├─ Role: {{ config.role }}
+            └─ Gateway: {{ config.gateway }}
+          {% endfor %}
+          {% if bootstrap_configs | length == 0 %}
+          No switches are connected via POAP yet. Run 1.7-check-poap-status.yml to verify.
+          {% endif %}
+      when: bootstrap_configs is defined
+
+    # Bootstrap each connected switch
+    - name: Bootstrap switches via POAP API
+      cisco.nd.nd_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_ssh_pass }}"
+        use_ssl: "{{ ansible_httpapi_use_ssl }}"
+        validate_certs: "{{ ansible_httpapi_validate_certs }}"
+        use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{{ item.fabric }}/inventory/poap"
+        method: POST
+        content: "{{ lookup('template', '../../templates/1.9-bootstrap-switches.json.j2') }}"
+      loop: "{{ bootstrap_configs }}"
+      loop_control:
+        label: "{{ item.hostname }} ({{ item.serial_number }})"
+      vars:
+        serial_number: "{{ item.serial_number }}"
+        model: "{{ item.model }}"
+        version: "{{ item.version }}"
+        hostname: "{{ item.hostname }}"
+        ip_address: "{{ item.ip_address }}"
+        password: "{{ vault_switch_password }}"
+        role: "{{ item.role }}"
+        gateway: "{{ item.gateway }}"
+        poap_data: "{{ item.poap_data }}"
+        fingerprint: "{{ item.fingerprint }}"
+        public_key: "{{ item.public_key }}"
+      when:
+        - bootstrap_configs is defined
+        - bootstrap_configs | length > 0
+      register: bootstrap_results
+
+    - name: Display bootstrap results
+      ansible.builtin.debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════════════════
+          BOOTSTRAP RESULTS
+          ═══════════════════════════════════════════════════════════════════════
+          {% if bootstrap_results.results is defined %}
+          {% for result in bootstrap_results.results %}
+          {% if result.skipped is not defined or not result.skipped %}
+          {{ '✓' if (result.failed is not defined or not result.failed) else '✗' }} {{ result.item.hostname }} ({{ result.item.serial_number }}): {{ 'SUCCESS' if (result.failed is not defined or not result.failed) else 'FAILED' }}
+          {% endif %}
+          {% endfor %}
+          {% else %}
+          No switches were bootstrapped.
+          {% endif %}
+          ═══════════════════════════════════════════════════════════════════════
+      when: bootstrap_results is defined

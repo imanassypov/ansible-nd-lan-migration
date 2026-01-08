@@ -14,7 +14,7 @@ This is an **Ansible automation project** for migrating Cisco NX-OS switches fro
 5. **Configure** VPC domains → Establish peer-links
 6. **Deploy** interfaces → L2/L3/VPC interface configurations
 
-**Key Pattern**: Each playbook generates/consumes YAML inventory files in `fabrics/<fabric>/` (e.g., `switch_inventory.csv`, `vlan_database.yml`, `l3_interfaces.yml`). These files are **generated artifacts**, not source files.
+**Key Pattern**: Each playbook generates/consumes YAML inventory files in `fabrics/<fabric>/` (e.g., `switch_migration_list.csv`, `vlan_database.yml`, `l3_interfaces.yml`). These files are **generated artifacts**, not source files.
 
 ### Fabric-Centric Organization
 - Multi-fabric support via `fabric_definitions.yml` 

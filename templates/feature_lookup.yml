@@ -1,0 +1,17 @@
+---
+# Feature Lookup Table
+# Maps NX-OS switch features to NDFC policy template names
+#
+# Usage:
+#   Load this file with include_vars and use it to translate
+#   discovered switch features to NDFC template names for policy creation
+#
+# Format:
+#   <nxos_feature_name>: <ndfc_template_name>
+
+feature_lookup:
+  tacacs+: feature_tacacs
+  nxapi: feature_nxapi
+  interface-vlan: feature_interface_vlan_11_1
+  lacp: feature_lacp
+  lldp: feature_lldp

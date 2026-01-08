@@ -1,0 +1,51 @@
+{#
+================================================================================
+Template: Pre-provision Switches to NDFC via POAP (JSON Payload)
+================================================================================
+Purpose:
+  Generate JSON payload for the Nexus Dashboard REST API to pre-provision
+  new switches via POAP (Power On Auto Provisioning).
+
+API Endpoint:
+  POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{fabric}/inventory/poap
+
+Input Variables:
+  switches                   - List of switch objects to pre-provision
+  switches[].hostname        - Switch hostname
+  switches[].serial_number   - Target switch serial number
+  switches[].model           - Target switch model (e.g., N9K-C9300v)
+  switches[].version         - Target NX-OS software version
+  switches[].ip_address      - Target switch management IP address
+  switches[].role            - Switch role (e.g., access, aggregation)
+  switches[].gateway         - Default gateway with prefix (e.g., 198.18.24.65/26)
+  nd_switch_password         - Switch access password for NDFC
+
+Key Settings:
+  discoveryAuthProtocol: 0   - No authentication protocol
+  imagePolicy: ""            - No specific image policy (use default)
+  modulesModel               - Module model(s) for the switch
+
+Notes:
+  - This template is used for greenfield/pre-provisioning scenarios
+  - Switches will be configured by NDFC when they boot via POAP
+  - Gateway format must include prefix length (e.g., 198.18.24.65/26)
+  - Serial number must match the target switch hardware
+================================================================================
+#}
+[
+{% for switch in switches %}
+  {
+    "serialNumber": "{{ switch.serial_number }}",
+    "model": "{{ switch.model }}",
+    "version": "{{ switch.version }}",
+    "hostname": "{{ switch.hostname }}",
+    "ipAddress": "{{ switch.ip_address }}",
+    "password": "{{ nd_switch_password }}",
+    "discoveryAuthProtocol": 0,
+    "data": "{\"modulesModel\": [\"{{ switch.model }}\"], \"gateway\": \"{{ switch.gateway }}\"}",
+    "imagePolicy": "",
+    "role": "{{ switch.role }}"
+  }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+]

@@ -1,494 +1,397 @@
 # Ansible DC LAN Migration
 
-Automated migration tooling for Cisco NX-OS switches from CLI-based management to Nexus Dashboard Fabric Controller (NDFC). This project provides a complete workflow to profile existing switch configurations and seamlessly migrate them to centralized NDFC management.
+Automated migration tooling for Cisco NX-OS switches from CLI-based management to Nexus Dashboard Fabric Controller (NDFC). This project provides complete workflows to:
+- **Profile** existing switch configurations
+- **Migrate** switches to centralized NDFC management
+- **Pre-provision** new access switches before physical deployment
 
 ## Overview
 
-This project implements a **6-stage sequential workflow**:
-1. **Profile** - Extract configurations from existing switches
-2. **Configure** - Create fabric definitions in Nexus Dashboard
-3. **Add Switches** - Register switches with NDFC
-4. **Deploy VLANs** - Push VLAN policies to the fabric
-5. **Configure VPC** - Establish VPC domains and peer-links
-6. **Deploy Interfaces** - Configure L2/L3/VPC interfaces
+This project implements two main workflows:
 
-## Prerequisites
+### Migration Workflow (Existing Switches)
+Sequential playbooks to migrate existing CLI-managed switches to NDFC:
+1. **Discovery** → Extract configurations from switches
+2. **Provision Fabric** → Create fabric definitions in NDFC
+3. **Deploy** → Configure VLANs, VPC, and interfaces
 
-### Software Requirements
-- **Python 3.13+** (managed via UV)
-- **Ansible Core 2.15.0+** (installed via UV)
-- **UV Package Manager** - Fast Python dependency management
+### Pre-Provisioning Workflow (New Switches)
+Configure new access switches in NDFC before physical deployment:
+1. **Pre-provision** → Register switch with serial number
+2. **Configure** → Features, interfaces, VLANs, routes
+3. **Bootstrap** → Deploy configuration via POAP
 
-### Ansible Collections
-- `cisco.nd` >= 1.3.0 - Nexus Dashboard REST API
-- `cisco.dcnm` >= 2.4.0 - NDFC/DCNM modules  
-- `cisco.nxos` >= 4.6.0 - NX-OS device management
-- `community.general` >= 6.4.0 - Common utilities
+---
 
-### Network Access
-- SSH connectivity to existing NX-OS switches (port 22)
-- HTTPS access to Nexus Dashboard API (port 443)
-- Valid credentials configured in Ansible Vault
+## Quick Start
 
-## Getting Started
-
-### 1. Environment Setup with UV
-
-This project uses [UV](https://docs.astral.sh/uv/) for fast, reproducible Python dependency management.
-
-#### Install UV
 ```bash
-# macOS/Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Or via Homebrew
-brew install uv
-```
-
-#### Initialize Project
-```bash
-# Clone repository
+# 1. Clone and setup environment
 git clone <repository-url>
 cd ansible-dc-lan-migration
-
-# Install all dependencies (Python packages + Ansible collections)
-uv sync
-
-# Activate virtual environment
-source .venv/bin/activate
-
-# Install Ansible collections
+uv sync && source .venv/bin/activate
 ansible-galaxy collection install -r requirements.yml
-```
 
-> **Note:** Always use `uv` commands, not `pip`, to maintain reproducible environments via `uv.lock`.
-
-For advanced UV usage, see [docs/uv-setup.md](docs/uv-setup.md).
-
-### 2. Configure Ansible Vault
-
-Store sensitive credentials securely using Ansible Vault.
-
-```bash
-# Create vault password file (gitignored automatically)
-echo "your-secure-password" > .vault_pass
-
-# Edit encrypted vault file
+# 2. Configure vault
+echo "your-password" > .vault_pass
 ansible-vault edit inventory/group_vars/all/vault.yml
+
+# 3. Run full provisioning
+ansible-playbook playbooks/provision-switch/0.0-full-provision-switch.yml
 ```
 
-**Required vault variables:**
-```yaml
 ---
-vault_switch_password: "password-for-nxos-switches"
-vault_nd_password: "password-for-nexus-dashboard"
-```
-
-For comprehensive vault management, see [docs/ansible-vault.md](docs/ansible-vault.md).
-
-### 3. Configure Inventory
-
-Edit inventory files to match your environment:
-
-**[inventory/hosts.yml](inventory/hosts.yml)** - Define switches with required attributes:
-```yaml
-switches:
-  children:
-    aggregation:
-      hosts:
-        agg01:
-          ansible_host: 198.18.24.66
-          fabric: mgmt-fabric        # Fabric assignment
-          role: aggregation           # Switch role
-          migrate: true               # Migration flag
-```
-
-**[inventory/host_vars/nexus_dashboard/fabric_definitions.yml](inventory/host_vars/nexus_dashboard/fabric_definitions.yml)** - Define fabric parameters:
-```yaml
-nd_fabrics:
-  - FABRIC_NAME: mgmt-fabric
-    FABRIC_TYPE: classicLan
-    IS_READ_ONLY: true
-    INBAND_MGMT: true
-    MGMT_GW: 198.18.24.65
-    # ... additional fabric settings
-```
 
 ## Project Structure
 
 ```
 ansible-dc-lan-migration/
-├── .github/
-│   └── copilot-instructions.md   # AI agent guidance
-├── fabrics/                        # Generated artifacts (created by playbook 01)
-│   └── <fabric-name>/              # Per-fabric profiled data
-│       ├── switch_inventory.csv    # Hardware inventory
-│       ├── vlan_database.yml       # VLAN configurations
-│       ├── l3_interfaces.yml       # L3 interface configs
-│       ├── l2_interfaces.yml       # L2 interface configs
-│       └── l2_vpc_interfaces.yml   # VPC interface configs
+├── fabrics/                                    # Generated artifacts per fabric
+│   └── <fabric-name>/
+│       ├── mgmt_interface.yml                  # Management interface configs
+│       ├── switch_features.yml                 # Enabled NX-OS features
+│       ├── vlan_database.yml                   # VLAN configurations
+│       ├── l2_interfaces.yml                   # L2 interface configs
+│       ├── l2_vpc_interfaces.yml               # VPC interface configs
+│       └── l3_interfaces.yml                   # L3 interface configs
+│
 ├── inventory/
-│   ├── hosts.yml                   # Switch and ND host definitions
+│   ├── hosts.yml                               # Switch and ND host definitions
 │   ├── group_vars/
-│   │   ├── all/
-│   │   │   ├── common.yml          # Non-sensitive variables
-│   │   │   └── vault.yml           # Encrypted credentials
-│   │   └── nd/
-│   │       └── connection.yml      # ND API connection settings
-│   └── host_vars/
-│       └── nexus_dashboard/
-│           └── fabric_definitions.yml  # Fabric definitions (source of truth)
-├── playbooks/                      # Sequential numbered playbooks
-│   ├── 01-profile-existing-switches.yml
-│   ├── 02-configure-nd-fabric.yml
-│   ├── 03-add-switches-to-nd-fabric.yml
-│   ├── 04-configure-vlan-policies.yml
-│   ├── 05-deploy-vpc-domain.yml
-│   └── 06-configure-interfaces.yml
-├── templates/                      # Jinja2 templates for API payloads
-│   ├── create_fabric.json.j2       # ND fabric creation
-│   ├── add_switches_to_fabric.json.j2
-│   ├── vpc_pair.json.j2
-│   └── ...
-├── ansible.cfg                     # Ansible configuration
-├── pyproject.toml                  # Python dependencies (UV)
-└── requirements.yml                # Ansible collections
+│   │   ├── all/vault.yml                       # Encrypted credentials
+│   │   └── nd/connection.yml                   # ND API settings
+│   └── host_vars/nexus_dashboard/
+│       └── fabric_definitions.yml              # Fabric source of truth
+│
+├── playbooks/
+│   ├── discovery/                              # Profile existing switches
+│   │   └── 1.0-profile-existing-switches.yml
+│   ├── provision-fabric/                       # Fabric configuration
+│   │   └── 1.0-configure-nd-fabric.yml
+│   └── provision-switch/                       # Switch provisioning workflow
+│       ├── 0.0-full-provision-switch.yml       # Master orchestration playbook
+│       ├── 1.0-preprovision-new-switches.yml
+│       ├── 1.1-create-discovery-user.yml
+│       ├── 1.2-provision-features.yml
+│       ├── 1.3-deploy-vpc-domain.yml
+│       ├── 1.4-provision-interfaces.yml
+│       ├── 1.5-provision-vlan-policies.yml
+│       ├── 1.6-provision-svi.yml
+│       ├── 1.7-provision-default-route.yml
+│       ├── 1.8-check-poap-status.yml
+│       └── 1.9-bootstrap-switches.yml
+│
+├── templates/                                  # Jinja2 templates for API payloads
+│
+├── ansible.cfg
+├── pyproject.toml
+└── requirements.yml
 ```
 
-**Key Directories:**
-- **`fabrics/`** - Auto-generated by playbook 01, contains profiled switch data
-- **`inventory/host_vars/nexus_dashboard/`** - Source of truth for fabric definitions
-- **`templates/`** - Transforms Ansible variables → NDFC API JSON payloads
+---
 
-## Playbooks Overview
+## Playbook Reference
 
-Playbooks must be executed **sequentially** - each depends on outputs from the previous stage.
+### Switch Provisioning Workflow (provision-switch/)
 
-### 01 - Profile Existing Switches
+The master playbook `0.0-full-provision-switch.yml` executes all playbooks in sequence. You can also run individual playbooks as needed.
 
-Discovers and extracts configurations from existing NX-OS switches.
+| # | Playbook | Template(s) | Description |
+|---|----------|-------------|-------------|
+| 0.0 | `full-provision-switch.yml` | — | Master orchestration playbook that executes all provisioning steps 1.0-1.9 in sequence |
+| 1.0 | `preprovision-new-switches.yml` | `1.0-preprovision-new-switches.json.j2` | Pre-provision switches to NDFC via POAP API. Registers switch serial number, model, version, IP, role, and gateway |
+| 1.1 | `create-discovery-user.yml` | `1.1-create-discovery-user.json.j2` | Create NDFC discovery user (switch_user policy) for switch authentication during discovery |
+| 1.2 | `provision-features.yml` | `1.2-provision-features.json.j2` | Configure NX-OS feature policies (LACP, LLDP, interface-vlan, etc.) using feature_lookup.yml mapping |
+| 1.3 | `deploy-vpc-domain.yml` | `1.3-deploy-vpc-domain.json.j2` | Deploy VPC domain configuration between aggregation switch pairs |
+| 1.4 | `provision-interfaces.yml` | `1.4-provision-interfaces.json.j2`, `1.4-provision-interfaces-vpc.json.j2` | Configure L2 interfaces (Ethernet, port-channels) and VPC interfaces with trunk/access modes |
+| 1.5 | `provision-vlan-policies.yml` | `1.5-provision-vlan-policies.json.j2` | Deploy VLAN policies from vlan_database.yml to switches |
+| 1.6 | `provision-svi.yml` | `1.6-provision-svi.json.j2` | Configure SVI (VLAN interface) for management with IP address and VRF |
+| 1.7 | `provision-default-route.yml` | `1.7-provision-default-route.json.j2` | Configure static default route (0.0.0.0/0) via management gateway |
+| 1.8 | `check-poap-status.yml` | — | Query POAP inventory to check if switches have connected and are ready for bootstrap |
+| 1.9 | `bootstrap-switches.yml` | `1.9-bootstrap-switches.json.j2` | Bootstrap pre-provisioned switches via POAP API to deploy Day-0 configuration |
 
-**What it profiles:**
-- Switch hardware info (model, serial, version)
-- VLAN configurations and assignments
-- Layer 3 interfaces (SVIs, loopbacks, routed ports) with IP, HSRP, OSPF
-- Layer 2 interfaces (access, trunk, port-channels)
-- VPC configurations
+### Discovery Workflow (discovery/)
 
-**Available tags:**
-- `profile-switches` - Hardware information only
-- `profile-vlans` - VLAN configurations
-- `profile-l3-interfaces` - Layer 3 interfaces with routing protocols
-- `profile-l2-interfaces` - Layer 2 and VPC interfaces
+| Playbook | Template(s) | Description |
+|----------|-------------|-------------|
+| `1.0-profile-existing-switches.yml` | `mgmt_interface.yml.j2`, `switch_features.yml.j2`, `vlan_database.yml.j2`, `interfaces_inventory.yml.j2`, `vpc_inventory.yml.j2` | Profile existing switches via SSH to extract configurations into YAML files |
 
-**Generated files:** `fabrics/<fabric>/` directory with all inventory files
+### Fabric Provisioning (provision-fabric/)
 
-**Usage:**
-```bash
-# Profile everything
-ansible-playbook playbooks/01-profile-existing-switches.yml
+| Playbook | Template(s) | Description |
+|----------|-------------|-------------|
+| `1.0-configure-nd-fabric.yml` | `02-configure-nd-fabric.json.j2` | Create and configure fabric definitions in NDFC |
 
-# Profile specific components
-ansible-playbook playbooks/01-profile-existing-switches.yml --tags profile-vlans,profile-l2-interfaces
-```
+---
 
-### 02 - Configure ND Fabric
+## Provisioning Workflow
 
-Creates fabric definitions in Nexus Dashboard via REST API.
+### Full Automated Provisioning
 
-**What it does:**
-- Queries existing fabrics to prevent duplicates
-- Creates new fabrics from `fabric_definitions.yml`
-- Supports Classic LAN and VXLAN fabric types
-
-**Usage:**
-```bash
-ansible-playbook playbooks/02-configure-nd-fabric.yml
-```
-
-### 03 - Add Switches to ND Fabric
-
-Registers switches with NDFC fabric management.
-
-**Usage:**
-```bash
-ansible-playbook playbooks/03-add-switches-to-nd-fabric.yml
-```
-
-### 04 - Configure VLAN Policies
-
-Deploys VLAN policies from profiled VLAN database to the fabric.
-
-**Usage:**
-```bash
-ansible-playbook playbooks/04-configure-vlan-policies.yml
-```
-
-### 05 - Deploy VPC Domain
-
-Configures VPC domains and peer-link connectivity between switch pairs.
-
-**What it configures:**
-- VPC domain IDs
-- Keepalive links and VRF
-- Peer-link port-channels
-- Allowed VLANs on peer-links
-
-**Usage:**
-```bash
-ansible-playbook playbooks/05-deploy-vpc-domain.yml
-```
-
-### 06 - Configure Interfaces
-
-Deploys Layer 2, Layer 3, and VPC interface configurations to NDFC.
-
-**Available tags:**
-- `deploy-l2-interfaces` - L2 access/trunk ports
-- `deploy-l3-interfaces` - SVIs, routed interfaces, loopbacks
-- `deploy-vpc-interfaces` - VPC port-channels
-
-**Usage:**
-```bash
-# Deploy all interface types
-ansible-playbook playbooks/06-configure-interfaces.yml
-
-# Deploy specific interface types
-ansible-playbook playbooks/06-configure-interfaces.yml --tags deploy-vpc-interfaces
-ansible-playbook playbooks/06-configure-interfaces.yml --tags deploy-l2-interfaces,deploy-l3-interfaces
-```
-
-## Common Workflows
-
-### Full Migration Sequence
-
-Execute all playbooks in order for complete CLI → NDFC migration:
+Run the master playbook to execute all steps:
 
 ```bash
-# Step 1: Profile existing switches
-ansible-playbook playbooks/01-profile-existing-switches.yml
-
-# Step 2: Create fabric in Nexus Dashboard
-ansible-playbook playbooks/02-configure-nd-fabric.yml
-
-# Step 3: Register switches with fabric
-ansible-playbook playbooks/03-add-switches-to-nd-fabric.yml
-
-# Step 4: Deploy VLAN policies
-ansible-playbook playbooks/04-configure-vlan-policies.yml
-
-# Step 5: Configure VPC domains
-ansible-playbook playbooks/05-deploy-vpc-domain.yml
-
-# Step 6: Deploy interface configurations
-ansible-playbook playbooks/06-configure-interfaces.yml
+ansible-playbook playbooks/provision-switch/0.0-full-provision-switch.yml -v
 ```
 
-### Incremental Updates
-
-Re-profile and update specific configurations after changes:
+### Step-by-Step Execution
 
 ```bash
-# Re-profile VPC interfaces after configuration changes
-ansible-playbook playbooks/01-profile-existing-switches.yml --tags profile-l2-interfaces
+# 1.0 - Pre-provision switches with NDFC
+ansible-playbook playbooks/provision-switch/1.0-preprovision-new-switches.yml
 
-# Deploy updated VPC configurations to NDFC
-ansible-playbook playbooks/06-configure-interfaces.yml --tags deploy-vpc-interfaces
+# 1.1 - Create discovery user for NDFC authentication
+ansible-playbook playbooks/provision-switch/1.1-create-discovery-user.yml
+
+# 1.2 - Configure NX-OS features
+ansible-playbook playbooks/provision-switch/1.2-provision-features.yml
+
+# 1.3 - Deploy VPC domain (for aggregation switches)
+ansible-playbook playbooks/provision-switch/1.3-deploy-vpc-domain.yml
+
+# 1.4 - Configure interfaces (L2, port-channels, VPC)
+ansible-playbook playbooks/provision-switch/1.4-provision-interfaces.yml
+
+# 1.5 - Deploy VLAN policies
+ansible-playbook playbooks/provision-switch/1.5-provision-vlan-policies.yml
+
+# 1.6 - Configure management SVI
+ansible-playbook playbooks/provision-switch/1.6-provision-svi.yml
+
+# 1.7 - Configure default route
+ansible-playbook playbooks/provision-switch/1.7-provision-default-route.yml
+
+# 1.8 - Check if switches connected via POAP
+ansible-playbook playbooks/provision-switch/1.8-check-poap-status.yml
+
+# 1.9 - Bootstrap switches to deploy configuration
+ansible-playbook playbooks/provision-switch/1.9-bootstrap-switches.yml
 ```
 
-### Selective Deployment
+### Workflow Diagram
 
-Deploy individual interface types for targeted updates:
-
-```bash
-# Deploy only SVIs and routed interfaces
-ansible-playbook playbooks/06-configure-interfaces.yml --tags deploy-l3-interfaces
-
-# Deploy only L2 access/trunk ports
-ansible-playbook playbooks/06-configure-interfaces.yml --tags deploy-l2-interfaces
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    SWITCH PROVISIONING WORKFLOW                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  1.0 Pre-provision    Register switch (serial, IP, model, role)         │
+│         ↓                                                                │
+│  1.1 Discovery User   Create switch_user for NDFC authentication        │
+│         ↓                                                                │
+│  1.2 Features         Enable NX-OS features (LACP, LLDP, etc.)          │
+│         ↓                                                                │
+│  1.3 VPC Domain       Configure VPC peer-link (aggregation only)        │
+│         ↓                                                                │
+│  1.4 Interfaces       Configure L2/L3/VPC interfaces                    │
+│         ↓                                                                │
+│  1.5 VLANs            Deploy VLAN policies                              │
+│         ↓                                                                │
+│  1.6 SVI              Configure management SVI with IP                  │
+│         ↓                                                                │
+│  1.7 Default Route    Configure static default route                    │
+│         ↓                                                                │
+│  1.8 POAP Status      Check switch connectivity to NDFC                 │
+│         ↓                                                                │
+│  1.9 Bootstrap        Deploy Day-0 config via POAP                      │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Testing and Validation
+---
 
-```bash
-# Dry-run mode (check without changes)
-ansible-playbook playbooks/01-profile-existing-switches.yml --check
+## Inventory Configuration
 
-# List all tasks without execution
-ansible-playbook playbooks/06-configure-interfaces.yml --list-tasks
+### Switch Inventory
 
-# Verbose output for troubleshooting
-ansible-playbook playbooks/02-configure-nd-fabric.yml -vvv
+Add switches to provision in `inventory/hosts.yml`:
 
-# Lint playbooks for best practices
-ansible-lint playbooks/*.yml
+```yaml
+switches:
+  children:
+    access:
+      hosts:
+        mgmt-acc01:
+          ansible_host: 198.18.24.81          # Source switch IP (for profiling)
+          fabric: mgmt-fabric
+          role: access
+          add_to_fabric: true                  # Flag to include in provisioning
+          destination_switch_sn: 9VBJSRKWVIZ   # NEW switch serial number
+          destination_switch_model: N9K-C9300v
+          destination_switch_version: "10.6(1)"
 ```
 
-## Key Concepts
+### Vault Configuration
 
-### Connection Patterns
+Configure credentials in `inventory/group_vars/all/vault.yml`:
 
-This project uses two distinct connection types:
+```yaml
+vault_switch_password: "switch-password"
+vault_nd_password: "nexus-dashboard-password"
+vault_discovery_username: "ndfc"              # Optional: defaults to 'ndfc'
+vault_discovery_password: "discovery-pass"    # Optional: defaults to vault_switch_password
+```
 
-**1. NX-OS Switches (`network_cli`)**
+---
+
+## Idempotency
+
+All provisioning playbooks are **idempotent**:
+- Query NDFC for existing resources before creating
+- Skip already-configured items
+- Safe to re-run multiple times
+
+Example output:
+```
+Feature policies to configure (excluding existing): 2
+Already configured (skipped): 5
+- mgmt-acc01: lacp -> feature_lacp
+- mgmt-acc01: lldp -> feature_lldp
+```
+
+---
+
+## Connection Patterns
+
+### NX-OS Switches (`network_cli`)
 - SSH connection to switches
-- Uses `cisco.nxos` collection modules
+- Uses `cisco.nxos` collection
 - Credentials: `vault_switch_password`
-- Config: `inventory/hosts.yml` under `switches` group
 
-**2. Nexus Dashboard (`httpapi`)**
+### Nexus Dashboard (`httpapi`)
 - HTTPS REST API connection
-- Uses `cisco.nd` collection modules  
+- Uses `cisco.nd` collection
 - Credentials: `vault_nd_password`
-- Config: `inventory/group_vars/nd/connection.yml`
+- Timeout: 1000 seconds
 
-### Interface Naming Transformations
-
-NDFC uses different naming conventions than CLI:
-
-| CLI Name | NDFC Name | Interface Type |
-|----------|-----------|----------------|
-| `port-channel10` | `vpc10` | VPC interfaces |
-| `Vlan100` | mode: `vlan` | SVI interfaces |
-| `loopback0` | mode: `lo` | Loopback interfaces |
-| `Ethernet1/1` | mode: `routed` | Physical interfaces |
-
-### Interface Exclusions
-
-Playbook 01 automatically excludes from profiling:
-- `mgmt0` - Management interface
-- `Vlan1` - Default VLAN
-- VPC peer-link interfaces - Managed by VPC domain configuration
-- Port-channel member interfaces - Only parent port-channel is profiled
-
-### Fabric Organization
-
-- **Multi-fabric support** - Each fabric defined in `fabric_definitions.yml`
-- **Isolated artifacts** - Each fabric gets `fabrics/<fabric-name>/` directory
-- **VPC domain definition** - Defined per-fabric with peer switch mappings
-- **Idempotent operations** - Playbooks check existing state before creating
-
-## Important Notes
-
-### Execution Order
-⚠️ **Playbooks must run sequentially** - Later playbooks depend on artifacts from earlier ones:
-- Can't deploy VLANs before fabric exists (02 → 04)
-- Can't configure interfaces before switches are added (03 → 06)
-- Re-profiling (01) is safe and updates existing artifact files
-
-### API Timeouts
-NDFC operations can be slow. Connection timeout is set to `1000` seconds in `inventory/group_vars/nd/connection.yml`. Don't reduce this value.
-
-### Python Version
-Requires **Python 3.13+** per `pyproject.toml`. Use `pyenv` or `uv` to manage Python versions:
-```bash
-# Check Python version in venv
-source .venv/bin/activate
-python --version  # Should be 3.13+
-```
-
-### Generated Files
-Files in `fabrics/<fabric>/` are **generated artifacts**, not source files:
-- Don't manually edit these files
-- Re-run playbook 01 to regenerate from switch configs
-- Safe to delete and regenerate at any time
+---
 
 ## Troubleshooting
 
-### Common Issues
+### Common Commands
 
-**"dict object has no attribute ipv6" error**
-- Fixed in latest version - ensure you have the IPv6 safety checks in playbook 01
-- Update your repo: `git pull origin main`
-
-**Playbook fails with "fabric not found"**
-- Ensure playbooks run in sequence (02 before 03, 03 before 04, etc.)
-- Check `fabrics/` directory exists and contains your fabric subdirectory
-
-**NDFC API timeout errors**
-- NDFC operations are inherently slow - this is normal
-- Don't reduce `ansible_command_timeout` in connection.yml
-- Consider using `--limit` to process fewer switches at once
-
-**Vault password errors**
-- Ensure `.vault_pass` file exists with correct password
-- Check file permissions: `chmod 600 .vault_pass`
-- Verify vault file can be decrypted: `ansible-vault view inventory/group_vars/all/vault.yml`
-
-**Collection not found errors**
 ```bash
-# Reinstall Ansible collections
-ansible-galaxy collection install -r requirements.yml --force
+# Dry-run mode
+ansible-playbook playbooks/provision-switch/1.0-preprovision-new-switches.yml --check
+
+# Verbose output
+ansible-playbook playbooks/provision-switch/0.0-full-provision-switch.yml -vvv
+
+# List tasks
+ansible-playbook playbooks/provision-switch/1.4-provision-interfaces.yml --list-tasks
+
+# Lint playbooks
+ansible-lint playbooks/**/*.yml
 ```
 
-### Validation Steps
+### Verify Generated Files
 
-1. **Check generated artifacts** - Review files in `fabrics/<fabric>/` after profiling:
-   ```bash
-   ls -la fabrics/mgmt-fabric/
-   cat fabrics/mgmt-fabric/vlan_database.yml
-   ```
-
-2. **Verify inventory structure**:
-   ```bash
-   ansible-inventory --graph
-   ansible-inventory --host agg01
-   ```
-
-3. **Test vault access**:
-   ```bash
-   ansible-vault view inventory/group_vars/all/vault.yml
-   ```
-
-4. **Validate playbook syntax**:
-   ```bash
-   ansible-playbook playbooks/01-profile-existing-switches.yml --syntax-check
-   ansible-lint playbooks/*.yml
-   ```
-
-5. **Check connectivity**:
-   ```bash
-   # Test switch connectivity
-   ansible switches -m ping
-   
-   # Test Nexus Dashboard API
-   ansible nexus_dashboard -m cisco.nd.nd_rest -a "path=/api/v1/manage/fabrics method=GET"
-   ```
-
-### Logs and Debugging
-
-- **Ansible logs**: `./ansible.log` (configured in `ansible.cfg`)
-- **Retry files**: `./retry/<playbook>.retry` - Contains failed hosts
-- **Verbose mode**: Add `-v`, `-vv`, or `-vvv` for increasing verbosity
-- **Step-through mode**: Use `--step` to execute tasks interactively
-
-### Getting Help
-
-1. Review playbook comments - Each playbook has detailed header documentation
-2. Check template headers in `templates/*.j2` for API payload structure
-3. Consult Cisco collection docs:
-   - [cisco.nd documentation](https://galaxy.ansible.com/ui/repo/published/cisco/nd/docs/)
-   - [cisco.nxos documentation](https://galaxy.ansible.com/ui/repo/published/cisco/nxos/docs/)
-4. See [.github/copilot-instructions.md](.github/copilot-instructions.md) for AI agent guidance
-
-## Contributing
-
-When modifying this project:
-
-- **Adding fabric types**: Update conditional logic in `templates/create_fabric.json.j2`
-- **New interface types**: Extend filtering in playbook 01 (search for `when:` conditions)
-- **API changes**: Check `cisco.nd.nd_rest` module calls - update `path` parameters
-- **Inventory changes**: Switches require `fabric` and `role` attributes in `hosts.yml`
-
-Run linting before committing:
 ```bash
-ansible-lint playbooks/*.yml
+ls -la fabrics/mgmt-fabric/
+cat fabrics/mgmt-fabric/l2_interfaces.yml
+cat fabrics/mgmt-fabric/switch_features.yml
 ```
+
+### Check Vault
+
+```bash
+ansible-vault view inventory/group_vars/all/vault.yml
+```
+
+---
+
+## Prerequisites
+
+### Software
+- **Python 3.13+** (via UV)
+- **Ansible Core 2.15.0+**
+- **UV Package Manager**
+
+### Ansible Collections
+- `cisco.nd` >= 1.3.0
+- `cisco.dcnm` >= 2.4.0
+- `cisco.nxos` >= 4.6.0
+
+### Install
+
+```bash
+# Install UV
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Setup project
+uv sync
+source .venv/bin/activate
+ansible-galaxy collection install -r requirements.yml
+```
+
+---
+
+## Appendix
+
+### A. API Endpoints Reference
+
+Complete list of NDFC REST API endpoints used by this project:
+
+| Endpoint | Method | Playbook(s) | Purpose |
+|----------|--------|-------------|---------|
+| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{fabric}/inventory` | GET | 1.0 | Query existing switches in fabric |
+| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{fabric}/inventory/poap` | GET | 1.8, 1.9 | Query POAP inventory for connected switches |
+| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{fabric}/inventory/poap` | POST | 1.0, 1.9 | Pre-provision switch / Bootstrap switch via POAP |
+| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/switches/{serial}` | GET | 1.1, 1.2, 1.5, 1.7 | Query existing policies for a switch (idempotency check) |
+| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create` | POST | 1.1, 1.2, 1.5, 1.7 | Create switch policies (features, VLANs, routes, users) |
+| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/vpcpair` | GET | 1.3 | Query existing VPC pairs |
+| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/vpcpair` | POST | 1.3 | Create VPC domain pair |
+| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/vpcpair` | DELETE | 1.3 | Delete VPC pair (cleanup) |
+| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/interface/detail?serialNumber={serial}` | GET | 1.4 | Query existing interfaces on a switch |
+| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/interface?serialNumber={serial}` | GET | 1.6 | Query interface summary for a switch |
+| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/globalInterface` | POST | 1.4, 1.6 | Create/configure interfaces (L2, L3, VPC, SVI) |
+| `/api/v1/manage/fabrics/{fabric}/switches` | GET | 1.3 | Query switches in fabric with role filter |
+
+### B. Policy Templates Reference
+
+NDFC policy templates used by this project:
+
+| Template Name | Purpose | Used By |
+|---------------|---------|---------|
+| `switch_user` | NDFC discovery user credentials | 1.1-create-discovery-user |
+| `feature_lacp` | Enable LACP feature | 1.2-provision-features |
+| `feature_lldp` | Enable LLDP feature | 1.2-provision-features |
+| `feature_interface_vlan_11_1` | Enable interface-vlan feature | 1.2-provision-features |
+| `feature_tacacs` | Enable TACACS+ feature | 1.2-provision-features |
+| `feature_nxapi` | Enable NX-API feature | 1.2-provision-features |
+| `feature_vpc` | Enable VPC feature | 1.2-provision-features |
+| `create_vlan` | Create VLAN | 1.5-provision-vlan-policies |
+| `static_route_v4_v6` | Static route configuration | 1.7-provision-default-route |
+| `int_trunk_host` | Ethernet trunk interface | 1.4-provision-interfaces |
+| `int_access_host` | Ethernet access interface | 1.4-provision-interfaces |
+| `int_port_channel_trunk_host` | Port-channel trunk interface | 1.4-provision-interfaces |
+| `int_vpc_trunk_host` | VPC trunk interface | 1.4-provision-interfaces |
+| `int_vlan` | SVI (VLAN interface) | 1.6-provision-svi |
+
+### C. Feature Lookup Mapping
+
+Mapping of NX-OS features to NDFC template names (from `templates/feature_lookup.yml`):
+
+| NX-OS Feature | NDFC Template |
+|---------------|---------------|
+| `lacp` | `feature_lacp` |
+| `lldp` | `feature_lldp` |
+| `interface-vlan` | `feature_interface_vlan_11_1` |
+| `tacacs+` | `feature_tacacs` |
+| `nxapi` | `feature_nxapi` |
+| `vpc` | `feature_vpc` |
+| `hsrp` | `feature_hsrp` |
+| `ospf` | `feature_ospf` |
+| `bgp` | `feature_bgp` |
+| `pim` | `feature_pim` |
+
+---
 
 ## License
 
-MIT License - See LICENSE file for details
+MIT License
 
 ## Authors
 
 - Russell Johnston (rujohns2@cisco.com)
+- Igor Manassypov (imanassy@cisco.com)

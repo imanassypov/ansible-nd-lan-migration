@@ -1,0 +1,240 @@
+---
+# Playbook: 1.0-preprovision-new-switches.yml
+# Purpose: Pre-provision new switches to NDFC via POAP API
+#
+# Description:
+#   This playbook pre-provisions new switches to Nexus Dashboard Fabric Controller by:
+#   1. Loading management interface data from mgmt_interface.yml
+#   2. Filtering switches with add_to_fabric: true
+#   3. Building pre-provision payload per fabric
+#   4. Calling the POAP API to pre-provision switches
+#
+# Variables Required (per switch in hosts.yml):
+#   - add_to_fabric: Set to true to include switch in pre-provisioning
+#   - fabric: Target fabric name
+#   - role: Switch role (access, aggregation, etc.)
+#   - destination_switch_sn: Target switch serial number
+#   - destination_switch_model: Target switch model (e.g., N9K-C9300v)
+#   - destination_switch_version: Target NX-OS version (e.g., 10.6(1))
+#   - ansible_host: Target switch management IP address
+#
+# Variables from mgmt_interface.yml:
+#   - mgmt_static_default: Default gateway for the management interface
+#   - mgmt_ip_address: Management IP with prefix (used to derive gateway prefix)
+#
+# API Endpoints Used:
+#   - POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/<fabric>/inventory/poap
+#
+# Templates Used:
+#   - 1.0-preprovision-new-switches.json.j2: Jinja2 template for POAP API JSON payload
+#
+# Tags:
+#   - preprovision-switches: Run only switch pre-provisioning tasks
+#
+# Example Usage:
+#   ansible-playbook ./playbooks/1.0-preprovision-new-switches.yml
+#   ansible-playbook ./playbooks/1.0-preprovision-new-switches.yml --tags preprovision-switches
+
+- name: Pre-provision New Switches to NDFC
+  hosts: nexus_dashboard
+  gather_facts: false
+
+  tags:
+    - preprovision-switches
+
+  tasks:
+
+    # Build list of switches to pre-provision from inventory
+    - name: Build list of switches to pre-provision
+      ansible.builtin.set_fact:
+        switches_to_preprovision: >-
+          {{
+            groups['switches'] | default([])
+            | map('extract', hostvars)
+            | selectattr('add_to_fabric', 'defined')
+            | selectattr('add_to_fabric', 'equalto', true)
+            | list
+          }}
+
+    # Load management interface data for each fabric
+    - name: Find all mgmt_interface.yml files
+      ansible.builtin.find:
+        paths: "{{ playbook_dir }}/../../fabrics"
+        patterns: "mgmt_interface.yml"
+        recurse: true
+      register: mgmt_interface_files
+      when: switches_to_preprovision | length > 0
+
+    - name: Load management interface data from all fabrics
+      ansible.builtin.include_vars:
+        file: "{{ item.path }}"
+        name: "mgmt_data_{{ item.path | dirname | basename }}"
+      loop: "{{ mgmt_interface_files.files | default([]) }}"
+      loop_control:
+        label: "{{ item.path | dirname | basename }}"
+      when: switches_to_preprovision | length > 0
+
+    # Build consolidated lookup for management interface data
+    - name: Build consolidated management interface lookup
+      ansible.builtin.set_fact:
+        mgmt_interface_lookup: |
+          {%- set lookup = {} -%}
+          {%- for file in mgmt_interface_files.files | default([]) -%}
+            {%- set fabric_name = file.path | dirname | basename -%}
+            {%- set var_name = 'mgmt_data_' + fabric_name -%}
+            {%- if hostvars[inventory_hostname][var_name] is defined -%}
+              {%- set fabric_data = hostvars[inventory_hostname][var_name] -%}
+              {%- if fabric_data.switches is defined -%}
+                {%- for hostname, data in fabric_data.switches.items() -%}
+                  {%- set _ = lookup.update({hostname: data | combine({'fabric': fabric_name})}) -%}
+                {%- endfor -%}
+              {%- endif -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ lookup }}
+      when: switches_to_preprovision | length > 0
+
+    # Build pre-provision profiles for each switch
+    - name: Build pre-provision profiles
+      ansible.builtin.set_fact:
+        preprovision_profiles: |
+          {%- set profiles = [] -%}
+          {%- for switch in switches_to_preprovision -%}
+            {%- set hostname = switch.inventory_hostname -%}
+            {%- if switch.destination_switch_sn is defined and 
+                   switch.destination_switch_model is defined and
+                   switch.destination_switch_version is defined and
+                   switch.ansible_host is defined and
+                   mgmt_interface_lookup[hostname] is defined -%}
+              {%- set mgmt_data = mgmt_interface_lookup[hostname] -%}
+              {%- set gateway_prefix = mgmt_data.mgmt_ip_address.split('/')[1] | default('24') -%}
+              {%- set gateway = mgmt_data.mgmt_static_default + '/' + gateway_prefix if mgmt_data.mgmt_static_default else '' -%}
+              {%- set profile = {
+                'fabric': switch.fabric,
+                'hostname': hostname,
+                'serial_number': switch.destination_switch_sn,
+                'model': switch.destination_switch_model,
+                'version': switch.destination_switch_version,
+                'ip_address': switch.ansible_host,
+                'role': switch.role,
+                'gateway': gateway
+              } -%}
+              {%- set _ = profiles.append(profile) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ profiles }}
+      when: switches_to_preprovision | length > 0
+
+    # Group profiles by fabric for batch API calls
+    - name: Group pre-provision profiles by fabric
+      ansible.builtin.set_fact:
+        preprovision_by_fabric: |
+          {%- set by_fabric = {} -%}
+          {%- for profile in preprovision_profiles -%}
+            {%- if profile.fabric not in by_fabric -%}
+              {%- set _ = by_fabric.update({profile.fabric: []}) -%}
+            {%- endif -%}
+            {%- set _ = by_fabric[profile.fabric].append(profile) -%}
+          {%- endfor -%}
+          {{ by_fabric }}
+      when: 
+        - switches_to_preprovision | length > 0
+        - preprovision_profiles | length > 0
+
+    # Query existing pre-provisioned switches to make playbook idempotent
+    - name: Query existing switches in each fabric
+      cisco.nd.nd_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_ssh_pass }}"
+        use_ssl: "{{ ansible_httpapi_use_ssl }}"
+        validate_certs: "{{ ansible_httpapi_validate_certs }}"
+        use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{{ item }}/inventory"
+        method: GET
+      loop: "{{ preprovision_by_fabric.keys() | list }}"
+      loop_control:
+        label: "{{ item }}"
+      when:
+        - preprovision_by_fabric is defined
+        - preprovision_by_fabric | length > 0
+      register: existing_switches_query
+
+    - name: Build set of existing switch serial numbers
+      ansible.builtin.set_fact:
+        existing_switch_serials: |
+          {%- set serials = [] -%}
+          {%- for result in existing_switches_query.results | default([]) -%}
+            {%- if result.current is defined and result.current is iterable -%}
+              {%- for switch in result.current -%}
+                {%- if switch.serialNumber is defined -%}
+                  {%- set _ = serials.append(switch.serialNumber) -%}
+                {%- endif -%}
+              {%- endfor -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ serials }}
+      when: existing_switches_query is defined
+
+    - name: Filter out already pre-provisioned switches
+      ansible.builtin.set_fact:
+        preprovision_by_fabric_filtered: |
+          {%- set filtered = {} -%}
+          {%- for fabric, switches in preprovision_by_fabric.items() -%}
+            {%- set new_switches = [] -%}
+            {%- for sw in switches -%}
+              {%- if sw.serial_number not in existing_switch_serials -%}
+                {%- set _ = new_switches.append(sw) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- if new_switches | length > 0 -%}
+              {%- set _ = filtered.update({fabric: new_switches}) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ filtered }}
+      when: preprovision_by_fabric is defined
+
+    - name: Display switches to pre-provision (after filtering existing)
+      ansible.builtin.debug:
+        msg: |
+          Switches to pre-provision (excluding existing): {{ preprovision_by_fabric_filtered | dict2items | map(attribute='value') | flatten | length }}
+          Already pre-provisioned: {{ existing_switch_serials | length }}
+          {% for fabric, switches in preprovision_by_fabric_filtered.items() %}
+          - {{ fabric }}: {% for sw in switches %}{{ sw.hostname }}{% if not loop.last %}, {% endif %}{% endfor %}
+          {% endfor %}
+      when: preprovision_by_fabric_filtered is defined
+
+    # Pre-provision switches to NDFC via POAP API
+    - name: Pre-provision switches to NDFC
+      cisco.nd.nd_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_ssh_pass }}"
+        use_ssl: "{{ ansible_httpapi_use_ssl }}"
+        validate_certs: "{{ ansible_httpapi_validate_certs }}"
+        use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{{ item.key }}/inventory/poap"
+        method: POST
+        content: "{{ lookup('template', '../../templates/1.0-preprovision-new-switches.json.j2') }}"
+      loop: "{{ preprovision_by_fabric_filtered | dict2items }}"
+      loop_control:
+        label: "{{ item.key }} ({{ item.value | length }} switches)"
+      vars:
+        switches: "{{ item.value }}"
+      when:
+        - preprovision_by_fabric_filtered is defined
+        - preprovision_by_fabric_filtered | length > 0
+      register: preprovision_results
+
+    - name: Display pre-provisioning results
+      ansible.builtin.debug:
+        msg: |
+          Pre-provisioning complete.
+          Already existed (skipped): {{ existing_switch_serials | length }}
+          {% for result in preprovision_results.results | default([]) %}
+          {% if result.skipped is not defined or not result.skipped %}
+          - {{ result.item.key }}: {{ 'SUCCESS' if result.failed is not defined or not result.failed else 'FAILED' }}
+            Switches: {% for sw in result.item.value %}{{ sw.hostname }}{% if not loop.last %}, {% endif %}{% endfor %}
+          {% endif %}
+          {% endfor %}
+      when: preprovision_results is defined

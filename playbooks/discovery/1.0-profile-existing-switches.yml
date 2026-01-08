@@ -15,7 +15,8 @@
 #   - OSPF routing protocol configurations
 #
 # Output Files Generated (per fabric):
-#   - switch_inventory.csv: Switch hardware and migration details
+#   - mgmt_interface.yml: Management interface IP addresses per switch
+#   - switch_features.yml: Enabled NX-OS features per switch
 #   - vlan_database.yml: VLAN definitions and switch assignments
 #   - l3_interfaces.yml: Layer 3 interface configurations
 #   - l2_interfaces.yml: Layer 2 non-VPC interface configurations
@@ -23,6 +24,7 @@
 #
 # Tags:
 #   - profile-switches: Profile switch hardware and basic info
+#   - profile-features: Discover enabled NX-OS features
 #   - profile-vlans: Discover VLAN configurations
 #   - profile-l3-interfaces: Profile Layer 3 interfaces, HSRP, OSPF
 #   - profile-l2-interfaces: Profile Layer 2 interfaces, port-channels, VPCs
@@ -48,7 +50,7 @@
 #   - Fabric assignment and role (access, aggregation, core, etc.)
 #   - Migration destination info (if migrating to new hardware)
 #
-# Generates: fabrics/<fabric>/switch_inventory.csv
+# Generates: fabrics/<fabric>/mgmt_interface.yml
 #------------------------------------------------------------------------------
 - name: Discover Existing Switches and Profile for migration
   hosts: switches
@@ -80,13 +82,15 @@
       set_fact:
         switch_profile:
           hostname: "{{ switch_facts.ansible_facts.ansible_net_hostname }}"
+          source_ip_address: "{{ ansible_host }}"
+          source_serial_number: "{{ switch_facts.ansible_facts.ansible_net_serialnum }}"
           ip_address: "{{ ansible_host }}"
-          serial_number: "{{ switch_facts.ansible_facts.ansible_net_serialnum }}"
-          model: "{{ switch_facts.ansible_facts.ansible_net_platform }}"
+          target_serial_number: "{{ switch_facts.ansible_facts.ansible_net_serialnum }}"
+          target_model: "{{ switch_facts.ansible_facts.ansible_net_platform }}"
           sw_version: "{{ switch_facts.ansible_facts.ansible_net_version }}"
           fabric: "{{ fabric }}"
           role: "{{ role }}"
-          migrate: "{{ migrate | default(false) | bool }}"
+          add_to_fabric: "{{ add_to_fabric | default(true) | bool }}"
           destination_switch_sn: "{{ destination_switch_sn | default(omit) }}"
           destination_switch_model: "{{ destination_switch_model | default(omit) }}"
           destination_switch_version: "{{ destination_switch_version | default(omit) }}"
@@ -100,18 +104,19 @@
       run_once: true
       delegate_to: localhost
     
-    # For migration scenarios: Replace source switch serial/model with destination hardware info
+    # For replacement scenarios: Replace source switch serial/model with destination hardware info
     # This allows NDFC to recognize the new hardware while preserving the configuration
-    - name: Update serial_number and model for non-migrating switches with destination info
+    # Used when add_to_fabric=false (switch is being replaced with new hardware)
+    - name: Update target_serial_number and target_model for replacement switches with destination info
       set_fact:
         all_switch_profiles: |
           {% set updated_profiles = [] %}
           {% for switch in all_switch_profiles %}
-          {% if not switch.migrate and switch.destination_switch_sn is defined and switch.destination_switch_model is defined and switch.destination_switch_version is defined %}
+          {% if not switch.add_to_fabric and switch.destination_switch_sn is defined and switch.destination_switch_model is defined and switch.destination_switch_version is defined %}
           {% set _ = updated_profiles.append(switch | combine({
             'ip_address': switch.destination_switch_ip_addr,
-            'serial_number': switch.destination_switch_sn,
-            'model': switch.destination_switch_model,
+            'target_serial_number': switch.destination_switch_sn,
+            'target_model': switch.destination_switch_model,
             'sw_version': switch.destination_switch_version
           })) %}
           {% else %}
@@ -123,7 +128,7 @@
       delegate_to: localhost
 
     # Group switches by fabric for organized inventory generation
-    - name: Build fabric-grouped inventory with migrate=true switches only
+    - name: Build fabric-grouped inventory
       set_fact:
         switch_inventory: >-
           {{
@@ -138,7 +143,7 @@
       loop_control:
         label: "{{ item }}"  
       
-    - name: Build fabric-grouped inventory with migrate=true switches only
+    - name: Build fabric-grouped inventory
       set_fact:
         switch_inventory: >-
           {{
@@ -162,29 +167,246 @@
     # Create fabric-specific directories to organize output files
     - name: Create fabric directories
       file:
-        path: "../fabrics/{{ item }}"
+        path: "../../fabrics/{{ item }}"
         state: directory
         mode: '0755'
       run_once: true
       delegate_to: localhost
       loop: "{{ all_switch_profiles | map(attribute='fabric') | unique | list }}"
 
-    # Generate CSV file containing switch inventory for each fabric
-    # Used by NDFC for switch discovery and fabric provisioning
-    - name: Generate CSV for each fabric
-      template:
-        src: ../templates/switch_inventory.csv.j2
-        dest: "../fabrics/{{ item.name }}/switch_inventory.csv"
+    # Get Layer 3 interface information to extract management IP address
+    - name: Get L3 Interface Information for Management IP
+      cisco.nxos.nxos_l3_interfaces:
+        state: gathered
+      register: l3_interface_info
+
+    # Get VRF interface membership to determine which VRF the management interface belongs to
+    - name: Get VRF Interface Information
+      cisco.nxos.nxos_command:
+        commands:
+          - "show vrf interface {{ mgmt_int | default('Vlan199') }}"
+      register: vrf_interface_info
+
+    # Parse VRF name from command output
+    # Output format: "Interface  VRF-Name   VRF-ID  Site-of-Origin"
+    - name: Parse VRF for management interface
+      set_fact:
+        mgmt_vrf: |
+          {%- set vrf_name = 'default' -%}
+          {%- if vrf_interface_info.stdout is defined and vrf_interface_info.stdout | length > 0 -%}
+            {%- for line in vrf_interface_info.stdout[0].split('\n') -%}
+              {%- set trimmed = line | trim -%}
+              {%- if trimmed | lower is search(mgmt_int | default('Vlan199') | lower) -%}
+                {%- set parts = trimmed.split() -%}
+                {%- if parts | length >= 2 -%}
+                  {%- set vrf_name = parts[1] -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+          {%- endif -%}
+          {{ vrf_name | trim }}
+
+    # Get default gateway from running config
+    # Look for static route matching management interface: "ip route 0.0.0.0/0 Vlan199 <gateway>"
+    - name: Get default route from running config
+      cisco.nxos.nxos_command:
+        commands:
+          - "show run | i 'ip route 0.0.0.0/0 {{ mgmt_int | default('Vlan199') }}'"
+      register: default_route_info
+
+    # Parse default gateway IP from static route config
+    # Output format: "ip route 0.0.0.0/0 Vlan199 198.18.24.65"
+    # parts[0]=ip, parts[1]=route, parts[2]=0.0.0.0/0, parts[3]=Vlan199, parts[4]=gateway
+    - name: Parse default gateway from running config
+      set_fact:
+        mgmt_static_default_gw: >-
+          {%- set ns = namespace(gateway='') -%}
+          {%- if default_route_info.stdout is defined and default_route_info.stdout | length > 0 -%}
+            {%- for line in default_route_info.stdout[0].split('\n') -%}
+              {%- set trimmed = line | trim -%}
+              {%- if trimmed | lower is search('ip route 0.0.0.0/0 ' + (mgmt_int | default('Vlan199')) | lower) -%}
+                {%- set parts = trimmed.split() -%}
+                {%- if parts | length >= 5 -%}
+                  {%- set ns.gateway = parts[4] -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+          {%- endif -%}
+          {{ ns.gateway }}
+
+    # Extract management IP address and VRF from the interface defined in mgmt_int variable
+    - name: Build management interface profile for current host
+      set_fact:
+        mgmt_interface_profile:
+          fabric: "{{ fabric }}"
+          hostname: "{{ inventory_hostname }}"
+          mgmt_interface: "{{ mgmt_int | default('Vlan199') }}"
+          mgmt_ip_address: "{{ (l3_interface_info.gathered | selectattr('name', 'equalto', mgmt_int | default('Vlan199')) | list | first | default({})).ipv4[0].address | default('') }}"
+          mgmt_interface_vrf: "{{ mgmt_vrf | trim }}"
+          mgmt_static_default: "{{ mgmt_static_default_gw | trim }}"
+      when: l3_interface_info.gathered is defined
+
+    # Aggregate all management interface profiles from all hosts
+    - name: Aggregate all management interface profiles
+      set_fact:
+        all_mgmt_interface_profiles: "{{ groups['switches'] | map('extract', hostvars, 'mgmt_interface_profile') | select('defined') | list }}"
       run_once: true
       delegate_to: localhost
-      loop: "{{ switch_inventory }}"
+
+    - name: Display all management interface profiles
+      debug:
+        var: all_mgmt_interface_profiles
+      run_once: true
+      delegate_to: localhost
+
+    # Group management interfaces by fabric
+    - name: Build fabric-grouped management interface inventory
+      set_fact:
+        mgmt_interface_inventory: |
+          {%- set inventory = {} -%}
+          {%- for profile in all_mgmt_interface_profiles -%}
+            {%- if profile.fabric not in inventory -%}
+              {%- set _ = inventory.update({profile.fabric: []}) -%}
+            {%- endif -%}
+            {%- set _ = inventory[profile.fabric].append({
+              'hostname': profile.hostname,
+              'mgmt_interface': profile.mgmt_interface,
+              'mgmt_ip_address': profile.mgmt_ip_address,
+              'mgmt_interface_vrf': profile.mgmt_interface_vrf,
+              'mgmt_static_default': profile.mgmt_static_default
+            }) -%}
+          {%- endfor -%}
+          {{ inventory }}
+      run_once: true
+      delegate_to: localhost
+
+    # Generate management interface YAML for each fabric
+    - name: Generate mgmt_interface.yml for each fabric
+      template:
+        src: ../../templates/mgmt_interface.yml.j2
+        dest: "../../fabrics/{{ item.key }}/mgmt_interface.yml"
+      run_once: true
+      delegate_to: localhost
+      loop: "{{ mgmt_interface_inventory | dict2items }}"
       loop_control:
-        label: "{{ item.name }}"
+        label: "{{ item.key }}"
       vars:
-        migration_inventory: "{{ item.switches }}"
+        fabric_name: "{{ item.key }}"
+        mgmt_interfaces: "{{ item.value }}"
 
 #------------------------------------------------------------------------------
-# Play 2: Discover and Profile VLAN Configurations
+# Play 2: Discover and Profile Enabled Features
+#------------------------------------------------------------------------------
+# Profiles enabled NX-OS features across all switches in each fabric
+# 
+# This play:
+#   - Gathers enabled features from each switch via 'show feature'
+#   - Organizes features by fabric and switch
+#   - Generates features inventory for provisioning validation
+#
+# Generates: fabrics/<fabric>/features.yml
+#------------------------------------------------------------------------------
+- name: Discover Enabled Features from all Switches
+  hosts: switches
+  gather_facts: false
+
+  tags:
+    - profile-features
+
+  tasks:
+
+    # Gather enabled features from running config (shows actual feature names)
+    - name: Get enabled features from switch
+      cisco.nxos.nxos_command:
+        commands:
+          - show run | i ^feature
+      register: feature_info_raw
+
+    - name: Display raw feature output
+      debug:
+        var: feature_info_raw.stdout_lines
+
+    # Parse enabled features from command output
+    # Format: "feature <name>" - extract the feature name after "feature "
+    - name: Parse enabled features
+      set_fact:
+        enabled_features: |
+          {%- set features = [] -%}
+          {%- if feature_info_raw.stdout is defined and feature_info_raw.stdout | length > 0 -%}
+            {%- for line in feature_info_raw.stdout[0].split('\n') -%}
+              {%- set trimmed = line | trim -%}
+              {%- if trimmed.startswith('feature ') -%}
+                {%- set feature_name = trimmed | replace('feature ', '') | trim -%}
+                {%- if feature_name and feature_name not in features -%}
+                  {%- set _ = features.append(feature_name) -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+          {%- endif -%}
+          {{ features }}
+
+    - name: Display parsed features
+      debug:
+        var: enabled_features
+
+    # Build feature profile for current host
+    - name: Build feature profile for current host
+      set_fact:
+        feature_profile:
+          fabric: "{{ fabric }}"
+          hostname: "{{ inventory_hostname }}"
+          features: "{{ enabled_features }}"
+
+    # Aggregate all feature profiles from all hosts
+    - name: Aggregate all feature profiles
+      set_fact:
+        all_feature_profiles: "{{ groups['switches'] | map('extract', hostvars, 'feature_profile') | select('defined') | list }}"
+      run_once: true
+      delegate_to: localhost
+
+    - name: Display all feature profiles
+      debug:
+        var: all_feature_profiles
+      run_once: true
+      delegate_to: localhost
+
+    # Group features by fabric for organized inventory generation
+    - name: Build fabric-grouped feature inventory
+      set_fact:
+        feature_inventory: >-
+          {%- set feat_by_fabric = {} -%}
+          {%- for profile in all_feature_profiles -%}
+            {%- if profile.fabric not in feat_by_fabric -%}
+              {%- set _ = feat_by_fabric.update({profile.fabric: {}}) -%}
+            {%- endif -%}
+            {%- set _ = feat_by_fabric[profile.fabric].update({profile.hostname: {'features': profile.features}}) -%}
+          {%- endfor -%}
+          {{ feat_by_fabric }}
+      run_once: true
+      delegate_to: localhost
+
+    - name: Display feature inventory
+      debug:
+        var: feature_inventory
+      run_once: true
+      delegate_to: localhost
+
+    # Generate switch_features.yml file for each fabric
+    - name: Generate switch_features.yml for each fabric
+      template:
+        src: ../../templates/switch_features.yml.j2
+        dest: "../../fabrics/{{ item.key }}/switch_features.yml"
+      run_once: true
+      delegate_to: localhost
+      loop: "{{ feature_inventory | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      vars:
+        fabric_name: "{{ item.key }}"
+        fabric_features: "{{ item.value }}"
+
+#------------------------------------------------------------------------------
+# Play 3: Discover and Profile VLAN Configurations
 #------------------------------------------------------------------------------
 # Profiles VLAN configurations across all switches in each fabric
 # 
@@ -221,7 +443,7 @@
       set_fact:
         vlan_profile:
           fabric: "{{ fabric }}"
-          switch_ip: "{{ destination_switch_ip_addr if (not (migrate | default(false) | bool)) and destination_switch_ip_addr is defined else ansible_host }}"
+          switch_ip: "{{ destination_switch_ip_addr if (not (add_to_fabric | default(true) | bool)) and destination_switch_ip_addr is defined else ansible_host }}"
           vlans: "{{ vlan_info.gathered }}"
       when: vlan_info.gathered is defined
 
@@ -273,8 +495,8 @@
     # Generate VLAN database YAML file for each fabric
     - name: Generate VLAN database YAML for each fabric
       template:
-        src: ../templates/vlan_database.yml.j2
-        dest: "../fabrics/{{ item.key }}/vlan_database.yml"
+        src: ../../templates/vlan_database.yml.j2
+        dest: "../../fabrics/{{ item.key }}/vlan_database.yml"
       run_once: true
       delegate_to: localhost
       loop: "{{ vlan_database | dict2items }}"
@@ -285,7 +507,7 @@
         fabric_vlans: "{{ item.value.values() | list }}"
 
 #------------------------------------------------------------------------------
-# Play 3: Profile Layer 3 Interfaces
+# Play 4: Profile Layer 3 Interfaces
 #------------------------------------------------------------------------------
 # Profiles Layer 3 interface configurations including:
 #   - IP addressing (IPv4/IPv6)
@@ -353,7 +575,7 @@
         interface_profile:
           fabric: "{{ fabric }}"
           hostname: "{{ inventory_hostname }}"
-          switch_ip: "{{ destination_switch_ip_addr if (not (migrate | default(false) | bool)) and destination_switch_ip_addr is defined else ansible_host }}"
+          switch_ip: "{{ destination_switch_ip_addr if (not (add_to_fabric | default(true) | bool)) and destination_switch_ip_addr is defined else ansible_host }}"
           interfaces: |
             {%- set merged_interfaces = [] -%}
             {%- set base_intfs = base_interface_info.gathered | default([]) -%}
@@ -473,8 +695,8 @@
 
     - name: Generate L3 interfaces inventory YAML for each fabric
       template:
-        src: ../templates/interfaces_inventory.yml.j2
-        dest: "../fabrics/{{ item.key }}/l3_interfaces.yml"
+        src: ../../templates/interfaces_inventory.yml.j2
+        dest: "../../fabrics/{{ item.key }}/l3_interfaces.yml"
       run_once: true
       delegate_to: localhost
       loop: "{{ (interface_inventory | from_yaml) | dict2items }}"
@@ -485,7 +707,7 @@
         fabric_interfaces: "{{ item.value }}"
 
 #------------------------------------------------------------------------------
-# Play 4: Profile Layer 2 Interfaces
+# Play 5: Profile Layer 2 Interfaces
 #------------------------------------------------------------------------------
 # Profiles Layer 2 interface configurations including:
 #   - Access ports with VLAN assignments
@@ -535,7 +757,7 @@
         l2_interface_profile:
           fabric: "{{ fabric }}"
           hostname: "{{ inventory_hostname }}"
-          switch_ip: "{{ destination_switch_ip_addr if (not (migrate | default(false) | bool)) and destination_switch_ip_addr is defined else ansible_host }}"
+          switch_ip: "{{ destination_switch_ip_addr if (not (add_to_fabric | default(true) | bool)) and destination_switch_ip_addr is defined else ansible_host }}"
           interfaces: "{{ l2_interface_info.gathered }}"
       when: l2_interface_info.gathered is defined
 
@@ -602,7 +824,7 @@
         l2_interface_profile_consolidated:
           fabric: "{{ fabric }}"
           hostname: "{{ inventory_hostname }}"
-          switch_ip: "{{ destination_switch_ip_addr if (not (migrate | default(false) | bool)) and destination_switch_ip_addr is defined else ansible_host }}"
+          switch_ip: "{{ destination_switch_ip_addr if (not (add_to_fabric | default(true) | bool)) and destination_switch_ip_addr is defined else ansible_host }}"
           interfaces: |
             {%- set consolidated = [] -%}
             {%- set lag_members = [] -%}
@@ -649,7 +871,7 @@
                   {%- endif -%}
                 {%- endif -%}
                 {%- set _ = iface_data.update({'type': iface_type}) -%}
-                {%- if not (migrate | default(false) | bool) -%}
+                {%- if not (add_to_fabric | default(true) | bool) -%}
                   {%- set _ = iface_data.update({'state': 'override'}) -%}
                 {%- endif -%}
                 {%- if has_config -%}
@@ -756,8 +978,8 @@
 
     - name: Generate VPC consolidated inventory YAML for each fabric
       template:
-        src: ../templates/vpc_inventory.yml.j2
-        dest: "../fabrics/{{ item.key }}/l2_vpc_interfaces.yml"
+        src: ../../templates/vpc_inventory.yml.j2
+        dest: "../../fabrics/{{ item.key }}/l2_vpc_interfaces.yml"
       run_once: true
       delegate_to: localhost
       loop: "{{ (l2_interface_inventory_vpc_consolidated | from_yaml) | dict2items }}"
@@ -769,8 +991,8 @@
 
     - name: Generate L2 interfaces inventory YAML for each fabric
       template:
-        src: ../templates/interfaces_inventory.yml.j2
-        dest: "../fabrics/{{ item.key }}/l2_interfaces.yml"
+        src: ../../templates/interfaces_inventory.yml.j2
+        dest: "../../fabrics/{{ item.key }}/l2_interfaces.yml"
       run_once: true
       delegate_to: localhost
       loop: "{{ l2_interface_inventory | dict2items }}"

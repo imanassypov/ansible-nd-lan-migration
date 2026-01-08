@@ -1,0 +1,41 @@
+{#
+================================================================================
+Template: VLAN Policy Bulk Create (JSON Payload)
+================================================================================
+Purpose:
+  Generate JSON payload for the NDFC REST API to create VLAN policies
+  for a switch via bulk-create endpoint.
+
+API Endpoint:
+  POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create
+
+Input Variables:
+  serial_number              - Target switch serial number
+  vlan_id                    - VLAN ID to create
+  vlan_name                  - VLAN name/description
+
+Key Settings:
+  entityName: SWITCH         - Policy applies to a switch
+  entityType: SWITCH         - Entity type
+  priority: 500              - Policy priority
+  templateName: create_vlan  - NDFC built-in VLAN creation template
+
+Notes:
+  - Each VLAN requires a separate API call
+  - The create_vlan template is a built-in NDFC template
+  - nvPairs contains VLAN and NAME variables for the template
+================================================================================
+#}
+{
+  "nvPairs": {
+    "VLAN": "{{ vlan_id }}",
+    "NAME": "{{ vlan_name }}"
+  },
+  "entityName": "SWITCH",
+  "entityType": "SWITCH",
+  "source": "",
+  "priority": 500,
+  "description": "VLAN {{ vlan_id }} - {{ vlan_name }}",
+  "templateName": "create_vlan",
+  "serialNumber": "{{ serial_number }}"
+}

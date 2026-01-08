@@ -1,0 +1,41 @@
+{#
+================================================================================
+Template: Discovery User Policy Bulk Create (JSON Payload)
+================================================================================
+Purpose:
+  Generate JSON payload for the NDFC REST API to create a discovery user
+  (switch_user) policy for NDFC to authenticate to switches.
+
+API Endpoint:
+  POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create
+
+Input Variables:
+  serial_number              - Target switch serial number
+  discovery_username         - Username for NDFC switch discovery
+  discovery_password         - Password for NDFC switch discovery
+
+Key Settings:
+  entityName: SWITCH         - Policy applies to a switch
+  entityType: SWITCH         - Entity type
+  templateName: switch_user  - NDFC template for switch user credentials
+  priority: 500              - Policy priority
+
+Notes:
+  - This user is used by NDFC to authenticate to switches during discovery
+  - Credentials should be stored in Ansible vault for security
+  - One policy per switch serial number
+================================================================================
+#}
+{
+  "nvPairs": {
+    "USERNAME": "{{ discovery_username }}",
+    "PASSWORD": "{{ discovery_password }}"
+  },
+  "entityName": "SWITCH",
+  "entityType": "SWITCH",
+  "source": "",
+  "priority": 500,
+  "description": "NDFC discovery user for switch authentication",
+  "templateName": "switch_user",
+  "serialNumber": "{{ serial_number }}"
+}

@@ -1,0 +1,36 @@
+{#
+================================================================================
+Template: Feature Policy Bulk Create (JSON Payload)
+================================================================================
+Purpose:
+  Generate JSON payload for the NDFC REST API to create feature policies
+  for a switch via bulk-create endpoint.
+
+API Endpoint:
+  POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create
+
+Input Variables:
+  serial_number              - Target switch serial number
+  template_name              - NDFC policy template name (from feature_lookup)
+
+Key Settings:
+  entityName: SWITCH         - Policy applies to a switch
+  entityType: SWITCH         - Entity type
+  priority: 500              - Policy priority
+
+Notes:
+  - Each feature requires a separate API call
+  - Template names are mapped via feature_lookup.yml
+  - Only features with valid template mappings will be configured
+================================================================================
+#}
+{
+  "nvPairs": {},
+  "entityName": "SWITCH",
+  "entityType": "SWITCH",
+  "source": "",
+  "priority": 500,
+  "description": "",
+  "templateName": "{{ template_name }}",
+  "serialNumber": "{{ serial_number }}"
+}

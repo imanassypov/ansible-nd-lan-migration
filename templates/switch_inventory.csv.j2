@@ -1,4 +1,0 @@
-hostname, ip_address, serial_number, model, role, sw_version
-{% for switch in migration_inventory %}
-{{ switch.hostname }}, {{ switch.ip_address }}, {{ switch.serial_number }}, {{ switch.model }}, {{ switch.role }}, {{ switch.sw_version }}
-{% endfor %}

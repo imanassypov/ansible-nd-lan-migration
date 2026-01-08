@@ -1,0 +1,231 @@
+---
+# Playbook: 1.1-preprovision-features.yml
+# Purpose: Configure feature policies on pre-provisioned switches via NDFC
+#
+# Description:
+#   This playbook configures NX-OS feature policies on switches by:
+#   1. Loading switch_features.yml to get enabled features per switch
+#   2. Loading feature_lookup.yml to map features to NDFC templates
+#   3. Filtering switches with add_to_fabric: true
+#   4. Calling the policies/bulk-create API for each mapped feature
+#
+# Variables Required (per switch in hosts.yml):
+#   - add_to_fabric: Set to true to include switch in provisioning
+#   - destination_switch_sn: Target switch serial number
+#
+# Variables from switch_features.yml:
+#   - switches.<hostname>.features: List of enabled features
+#
+# Variables from feature_lookup.yml:
+#   - feature_lookup.<feature>: NDFC template name for the feature
+#
+# API Endpoints Used:
+#   - POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create
+#
+# Templates Used:
+#   - 1.1-provision-features.json.j2: Jinja2 template for feature policy JSON payload
+#
+# Tags:
+#   - preprovision-features: Run only feature provisioning tasks
+#
+# Example Usage:
+#   ansible-playbook ./playbooks/provision-access/1.1-preprovision-features.yml
+#   ansible-playbook ./playbooks/provision-access/1.1-preprovision-features.yml --tags preprovision-features
+
+- name: Configure Feature Policies on Pre-provisioned Switches
+  hosts: nexus_dashboard
+  gather_facts: false
+
+  tags:
+    - preprovision-features
+
+  tasks:
+
+    # Build list of switches to provision features
+    - name: Build list of switches to provision
+      ansible.builtin.set_fact:
+        switches_to_provision: >-
+          {{
+            groups['switches'] | default([])
+            | map('extract', hostvars)
+            | selectattr('add_to_fabric', 'defined')
+            | selectattr('add_to_fabric', 'equalto', true)
+            | list
+          }}
+
+    # Load feature lookup table
+    - name: Load feature lookup table
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../../templates/feature_lookup.yml"
+      when: switches_to_provision | length > 0
+
+    # Load switch features from all fabrics
+    - name: Find all switch_features.yml files
+      ansible.builtin.find:
+        paths: "{{ playbook_dir }}/../../fabrics"
+        patterns: "switch_features.yml"
+        recurse: true
+      register: switch_features_files
+      when: switches_to_provision | length > 0
+
+    - name: Load switch features data from all fabrics
+      ansible.builtin.include_vars:
+        file: "{{ item.path }}"
+        name: "features_data_{{ item.path | dirname | basename }}"
+      loop: "{{ switch_features_files.files | default([]) }}"
+      loop_control:
+        label: "{{ item.path | dirname | basename }}"
+      when: switches_to_provision | length > 0
+
+    # Build consolidated switch features lookup
+    - name: Build consolidated switch features lookup
+      ansible.builtin.set_fact:
+        switch_features_lookup: |
+          {%- set lookup = {} -%}
+          {%- for file in switch_features_files.files | default([]) -%}
+            {%- set fabric_name = file.path | dirname | basename -%}
+            {%- set var_name = 'features_data_' + fabric_name -%}
+            {%- if hostvars[inventory_hostname][var_name] is defined -%}
+              {%- set fabric_data = hostvars[inventory_hostname][var_name] -%}
+              {%- if fabric_data.switches is defined -%}
+                {%- for hostname, data in fabric_data.switches.items() -%}
+                  {%- set _ = lookup.update({hostname: data.features | default([])}) -%}
+                {%- endfor -%}
+              {%- endif -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ lookup }}
+      when: switches_to_provision | length > 0
+
+    # Build feature policy list for each switch
+    - name: Build feature policy configurations
+      ansible.builtin.set_fact:
+        feature_policies: |
+          {%- set policies = [] -%}
+          {%- for switch in switches_to_provision -%}
+            {%- set hostname = switch.inventory_hostname -%}
+            {%- set serial = switch.destination_switch_sn | default('') -%}
+            {%- if serial and hostname in switch_features_lookup -%}
+              {%- set features = switch_features_lookup[hostname] -%}
+              {%- for feature in features -%}
+                {%- if feature in feature_lookup -%}
+                  {%- set policy = {
+                    'hostname': hostname,
+                    'serial_number': serial,
+                    'feature': feature,
+                    'template_name': feature_lookup[feature]
+                  } -%}
+                  {%- set _ = policies.append(policy) -%}
+                {%- endif -%}
+              {%- endfor -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ policies }}
+      when: switches_to_provision | length > 0
+
+    # Query existing policies per switch to make playbook idempotent
+    - name: Get unique serial numbers from feature policies
+      ansible.builtin.set_fact:
+        unique_serials: "{{ feature_policies | map(attribute='serial_number') | unique | list }}"
+      when:
+        - feature_policies is defined
+        - feature_policies | length > 0
+
+    - name: Query existing policies for each switch
+      cisco.nd.nd_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_ssh_pass }}"
+        use_ssl: "{{ ansible_httpapi_use_ssl }}"
+        validate_certs: "{{ ansible_httpapi_validate_certs }}"
+        use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/switches/{{ item }}"
+        method: GET
+      loop: "{{ unique_serials | default([]) }}"
+      loop_control:
+        label: "{{ item }}"
+      when:
+        - unique_serials is defined
+        - unique_serials | length > 0
+      register: existing_policies_query
+      ignore_errors: true
+
+    - name: Build set of existing policy template names per serial
+      ansible.builtin.set_fact:
+        existing_policies_lookup: |
+          {%- set lookup = {} -%}
+          {%- for result in existing_policies_query.results | default([]) -%}
+            {%- if result.current is defined and result.current is iterable -%}
+              {%- set serial = result.item -%}
+              {%- set templates = [] -%}
+              {%- for policy in result.current -%}
+                {%- if policy.templateName is defined -%}
+                  {%- set _ = templates.append(policy.templateName) -%}
+                {%- endif -%}
+              {%- endfor -%}
+              {%- set _ = lookup.update({serial: templates}) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ lookup }}
+      when: existing_policies_query is defined
+
+    - name: Filter out already configured feature policies
+      ansible.builtin.set_fact:
+        feature_policies_filtered: |
+          {%- set filtered = [] -%}
+          {%- for policy in feature_policies -%}
+            {%- set serial = policy.serial_number -%}
+            {%- set existing = existing_policies_lookup.get(serial, []) -%}
+            {%- if policy.template_name not in existing -%}
+              {%- set _ = filtered.append(policy) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ filtered }}
+      when:
+        - feature_policies is defined
+        - existing_policies_lookup is defined
+
+    - name: Display feature policies to configure (after filtering existing)
+      ansible.builtin.debug:
+        msg: |
+          Feature policies to configure (excluding existing): {{ feature_policies_filtered | length }}
+          Already configured (skipped): {{ (feature_policies | length) - (feature_policies_filtered | length) }}
+          {% for policy in feature_policies_filtered %}
+          - {{ policy.hostname }}: {{ policy.feature }} -> {{ policy.template_name }}
+          {% endfor %}
+      when: feature_policies_filtered is defined
+
+    # Configure feature policies via NDFC API
+    - name: Configure feature policies on switches
+      cisco.nd.nd_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_ssh_pass }}"
+        use_ssl: "{{ ansible_httpapi_use_ssl }}"
+        validate_certs: "{{ ansible_httpapi_validate_certs }}"
+        use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create"
+        method: POST
+        content: "{{ lookup('template', '../../templates/1.2-provision-features.json.j2') }}"
+      loop: "{{ feature_policies_filtered }}"
+      loop_control:
+        label: "{{ item.hostname }}: {{ item.feature }}"
+      vars:
+        serial_number: "{{ item.serial_number }}"
+        template_name: "{{ item.template_name }}"
+      when:
+        - feature_policies_filtered is defined
+        - feature_policies_filtered | length > 0
+      register: feature_policy_results
+
+    - name: Display feature policy configuration results
+      ansible.builtin.debug:
+        msg: |
+          Feature policy configuration complete.
+          Already existed (skipped): {{ (feature_policies | length) - (feature_policies_filtered | default([]) | length) }}
+          {% for result in feature_policy_results.results | default([]) %}
+          {% if result.skipped is not defined or not result.skipped %}
+          - {{ result.item.hostname }}/{{ result.item.feature }}: {{ 'SUCCESS' if result.failed is not defined or not result.failed else 'FAILED' }}
+          {% endif %}
+          {% endfor %}
+      when: feature_policy_results is defined

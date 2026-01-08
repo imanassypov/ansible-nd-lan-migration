@@ -1,0 +1,32 @@
+{# Template: static_route.json.j2 #}
+{# Purpose: Generate JSON payload for configuring static routes via NDFC policies API #}
+{# API Endpoint: POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create #}
+{# Template: static_route_v4_v6 #}
+{#
+   Required Variables:
+     - serial_number: Target switch serial number
+     - next_hop: Next-hop IP address (e.g., "198.18.24.65")
+     - prefix: Destination prefix (e.g., "0.0.0.0/0" for default route)
+     - vrf_name: VRF name (empty string for default VRF)
+     - route_preference: Route preference/AD (optional, empty for default)
+     - next_hop_name: Name for next-hop (optional)
+     - tag: Route tag (optional)
+     - track_id: Track object ID (optional)
+     - next_hop_vrf: VRF for next-hop (optional)
+#}
+{
+  "nvPairs": {
+    "vrfName": "{{ vrf_name | default('') }}",
+    "staticRoutes": "{\"staticRoutes\":[{\"IP_VERSION\":\"IPv4\",\"ipv4Prefix\":\"{{ prefix | default('0.0.0.0/0') }}\",\"ipv6Prefix\":\"\",\"nextHop\":\"{{ next_hop }}\",\"routePreference\":\"{{ route_preference | default('') }}\",\"nextHopName\":\"{{ next_hop_name | default('') }}\",\"tag\":\"{{ tag | default('') }}\",\"trackId\":\"{{ track_id | default('') }}\",\"nextHopVrf\":\"{{ next_hop_vrf | default('') }}\"}]}",
+    "SERIAL_NUMBER": "",
+    "SOURCE": "",
+    "POLICY_ID": ""
+  },
+  "entityName": "SWITCH",
+  "entityType": "SWITCH",
+  "source": "",
+  "priority": 500,
+  "description": "{{ description | default('Default route') }}",
+  "templateName": "static_route_v4_v6",
+  "serialNumber": "{{ serial_number }}"
+}
