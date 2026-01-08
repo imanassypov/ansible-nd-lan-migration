@@ -1,4 +1,4 @@
-git rm --cached -r source_configs/# Python
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -36,6 +36,7 @@ collections/ansible_collections/
 # Vault files (uncomment if you want to exclude)
 # *vault*.yml
 # secrets.yml
+.vault_pass
 
 # Testing
 .pytest_cache/
