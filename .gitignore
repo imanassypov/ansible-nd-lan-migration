@@ -36,6 +36,7 @@ collections/ansible_collections/
 # Vault files (uncomment if you want to exclude)
 # *vault*.yml
 # secrets.yml
+.vault_pass
 
 # Testing
 .pytest_cache/
