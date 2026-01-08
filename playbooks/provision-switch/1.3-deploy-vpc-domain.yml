@@ -164,7 +164,7 @@
         path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/vpcpair"
         method: POST
         timeout: 300
-        content: "{{ lookup('template', playbook_dir + '/../../templates/1.2-deploy-vpc-domain.json.j2') }}"
+        content: "{{ lookup('template', playbook_dir + '/../../templates/1.3-deploy-vpc-domain.json.j2') }}"
       loop: "{{ vpc_domains_to_deploy }}"
       loop_control:
         label: "{{ item.FABRIC_NAME }}: Domain {{ item.DOMAIN_ID }}"

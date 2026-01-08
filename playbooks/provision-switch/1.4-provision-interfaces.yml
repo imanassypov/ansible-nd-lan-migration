@@ -187,7 +187,7 @@
       cisco.nd.nd_rest:
         path: /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/globalInterface
         method: post
-        content: "{{ lookup('template', playbook_dir + '/../../templates/1.3-provision-interfaces.json.j2') }}"
+        content: "{{ lookup('template', playbook_dir + '/../../templates/1.4-provision-interfaces.json.j2') }}"
       vars:
         switch_name: "{{ switch.inventory_hostname }}"
         switch_serial: "{{ hostvars[switch.inventory_hostname]['destination_switch_sn'] }}"
@@ -210,7 +210,7 @@
       cisco.nd.nd_rest:
         path: /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/globalInterface
         method: post
-        content: "{{ lookup('template', playbook_dir + '/../../templates/1.3-provision-interfaces.json.j2') }}"
+        content: "{{ lookup('template', playbook_dir + '/../../templates/1.4-provision-interfaces.json.j2') }}"
       vars:
         switch_name: "{{ switch.inventory_hostname }}"
         switch_serial: "{{ hostvars[switch.inventory_hostname]['destination_switch_sn'] }}"
@@ -255,7 +255,7 @@
       cisco.nd.nd_rest:
         path: /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/globalInterface
         method: post
-        content: "{{ lookup('template', playbook_dir + '/../../templates/1.3-provision-interfaces.json.j2') }}"
+        content: "{{ lookup('template', playbook_dir + '/../../templates/1.4-provision-interfaces.json.j2') }}"
       vars:
         switch_name: "{{ switch.inventory_hostname }}"
         switch_serial: "{{ hostvars[switch.inventory_hostname]['destination_switch_sn'] }}"
@@ -397,7 +397,7 @@
       cisco.nd.nd_rest:
         path: /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/globalInterface
         method: post
-        content: "{{ lookup('template', playbook_dir + '/../../templates/1.3-provision-interfaces-vpc.json.j2') }}"
+        content: "{{ lookup('template', playbook_dir + '/../../templates/1.4-provision-interfaces-vpc.json.j2') }}"
       vars:
         vpc_interface: "{{ vpc_item }}"
         fabric_name: "{{ vpc_item.switches | map('extract', hostvars) | map(attribute='fabric') | first }}"

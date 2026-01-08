@@ -1,5 +1,5 @@
 {
-  "policy": "{{ 'int_access_host' if (interface_type == 'l2' and switch_interfaces[0].mode == 'access') else 'int_trunk_host' }}",
+  "policy": "{{ 'int_access_host' if (interface_type == 'l2' and switch_interfaces[0].mode == 'access') else 'int_port_channel_trunk_host' if (switch_interfaces[0].type == 'pc') else 'int_trunk_host' }}",
   "interfaceType": "{{ 'INTERFACE_ETHERNET' if switch_interfaces[0].type == 'eth' else 'INTERFACE_PORT_CHANNEL' if switch_interfaces[0].type == 'pc' else 'INTERFACE_VLAN' }}",
   "interfaces": [
 {%- for iface in switch_interfaces %}
