@@ -22,7 +22,7 @@
 #   - POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create
 #
 # Templates Used:
-#   - 1.1-create-discovery-user.json.j2: Jinja2 template for switch_user policy JSON payload
+#   - 1.1-create-discovery-user.j2: Jinja2 template for switch_user policy JSON payload
 #
 # Tags:
 #   - create-discovery-user: Run only discovery user provisioning tasks
@@ -184,7 +184,7 @@
         use_proxy: "{{ ansible_httpapi_use_proxy }}"
         path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create"
         method: POST
-        content: "{{ lookup('template', '../../templates/1.1-create-discovery-user.json.j2') }}"
+        content: "{{ lookup('template', '../../templates/1.1-create-discovery-user.j2') }}"
       loop: "{{ discovery_user_configs_filtered }}"
       loop_control:
         label: "{{ item.hostname }} ({{ item.serial_number }})"

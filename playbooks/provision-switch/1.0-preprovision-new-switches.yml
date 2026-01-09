@@ -4,10 +4,11 @@
 #
 # Description:
 #   This playbook pre-provisions new switches to Nexus Dashboard Fabric Controller by:
-#   1. Loading management interface data from mgmt_interface.yml
-#   2. Filtering switches with add_to_fabric: true
-#   3. Building pre-provision payload per fabric
-#   4. Calling the POAP API to pre-provision switches
+#   1. Loading static routes data from static_routes.yml
+#   2. Loading L3 interface data from l3_interfaces.yml
+#   3. Filtering switches with add_to_fabric: true
+#   4. Building pre-provision payload per fabric
+#   5. Calling the POAP API to pre-provision switches
 #
 # Variables Required (per switch in hosts.yml):
 #   - add_to_fabric: Set to true to include switch in pre-provisioning
@@ -18,15 +19,17 @@
 #   - destination_switch_version: Target NX-OS version (e.g., 10.6(1))
 #   - ansible_host: Target switch management IP address
 #
-# Variables from mgmt_interface.yml:
-#   - mgmt_static_default: Default gateway for the management interface
-#   - mgmt_ip_address: Management IP with prefix (used to derive gateway prefix)
+# Variables from static_routes.yml:
+#   - switches.<hostname>.routes: List of static routes including default gateway
+#
+# Variables from l3_interfaces.yml:
+#   - switches.<hostname>.interfaces: L3 interface configurations with IP addresses
 #
 # API Endpoints Used:
 #   - POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/<fabric>/inventory/poap
 #
 # Templates Used:
-#   - 1.0-preprovision-new-switches.json.j2: Jinja2 template for POAP API JSON payload
+#   - 1.0-preprovision-new-switches.j2: Jinja2 template for POAP API JSON payload
 #
 # Tags:
 #   - preprovision-switches: Run only switch pre-provisioning tasks
@@ -56,37 +59,77 @@
             | list
           }}
 
-    # Load management interface data for each fabric
-    - name: Find all mgmt_interface.yml files
+    #--------------------------------------------------------------------------
+    # Load static routes data for gateway info
+    #--------------------------------------------------------------------------
+    - name: Find all static_routes.yml files
       ansible.builtin.find:
         paths: "{{ playbook_dir }}/../../fabrics"
-        patterns: "mgmt_interface.yml"
+        patterns: "static_routes.yml"
         recurse: true
-      register: mgmt_interface_files
+      register: static_routes_files
       when: switches_to_preprovision | length > 0
 
-    - name: Load management interface data from all fabrics
+    - name: Load static routes data from all fabrics
       ansible.builtin.include_vars:
         file: "{{ item.path }}"
-        name: "mgmt_data_{{ item.path | dirname | basename }}"
-      loop: "{{ mgmt_interface_files.files | default([]) }}"
+        name: "routes_data_{{ item.path | dirname | basename }}"
+      loop: "{{ static_routes_files.files | default([]) }}"
       loop_control:
         label: "{{ item.path | dirname | basename }}"
       when: switches_to_preprovision | length > 0
 
-    # Build consolidated lookup for management interface data
-    - name: Build consolidated management interface lookup
+    - name: Build consolidated static routes lookup
       ansible.builtin.set_fact:
-        mgmt_interface_lookup: |
+        static_routes_lookup: |
           {%- set lookup = {} -%}
-          {%- for file in mgmt_interface_files.files | default([]) -%}
+          {%- for file in static_routes_files.files | default([]) -%}
             {%- set fabric_name = file.path | dirname | basename -%}
-            {%- set var_name = 'mgmt_data_' + fabric_name -%}
+            {%- set var_name = 'routes_data_' + fabric_name -%}
             {%- if hostvars[inventory_hostname][var_name] is defined -%}
               {%- set fabric_data = hostvars[inventory_hostname][var_name] -%}
               {%- if fabric_data.switches is defined -%}
                 {%- for hostname, data in fabric_data.switches.items() -%}
                   {%- set _ = lookup.update({hostname: data | combine({'fabric': fabric_name})}) -%}
+                {%- endfor -%}
+              {%- endif -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ lookup }}
+      when: switches_to_preprovision | length > 0
+
+    #--------------------------------------------------------------------------
+    # Load L3 interface data for management IP prefix
+    #--------------------------------------------------------------------------
+    - name: Find all l3_interfaces.yml files
+      ansible.builtin.find:
+        paths: "{{ playbook_dir }}/../../fabrics"
+        patterns: "l3_interfaces.yml"
+        recurse: true
+      register: l3_interfaces_files
+      when: switches_to_preprovision | length > 0
+
+    - name: Load L3 interface data from all fabrics
+      ansible.builtin.include_vars:
+        file: "{{ item.path }}"
+        name: "l3_data_{{ item.path | dirname | basename }}"
+      loop: "{{ l3_interfaces_files.files | default([]) }}"
+      loop_control:
+        label: "{{ item.path | dirname | basename }}"
+      when: switches_to_preprovision | length > 0
+
+    - name: Build consolidated L3 interfaces lookup
+      ansible.builtin.set_fact:
+        l3_interfaces_lookup: |
+          {%- set lookup = {} -%}
+          {%- for file in l3_interfaces_files.files | default([]) -%}
+            {%- set fabric_name = file.path | dirname | basename -%}
+            {%- set var_name = 'l3_data_' + fabric_name -%}
+            {%- if hostvars[inventory_hostname][var_name] is defined -%}
+              {%- set fabric_data = hostvars[inventory_hostname][var_name] -%}
+              {%- if fabric_data.switches is defined -%}
+                {%- for hostname, data in fabric_data.switches.items() -%}
+                  {%- set _ = lookup.update({hostname: {'interfaces': data.interfaces | default([]), 'fabric': fabric_name}}) -%}
                 {%- endfor -%}
               {%- endif -%}
             {%- endif -%}
@@ -101,14 +144,21 @@
           {%- set profiles = [] -%}
           {%- for switch in switches_to_preprovision -%}
             {%- set hostname = switch.inventory_hostname -%}
+            {%- set mgmt_int = switch.mgmt_int | default('Vlan199') -%}
             {%- if switch.destination_switch_sn is defined and 
                    switch.destination_switch_model is defined and
                    switch.destination_switch_version is defined and
-                   switch.ansible_host is defined and
-                   mgmt_interface_lookup[hostname] is defined -%}
-              {%- set mgmt_data = mgmt_interface_lookup[hostname] -%}
-              {%- set gateway_prefix = mgmt_data.mgmt_ip_address.split('/')[1] | default('24') -%}
-              {%- set gateway = mgmt_data.mgmt_static_default + '/' + gateway_prefix if mgmt_data.mgmt_static_default else '' -%}
+                   switch.ansible_host is defined -%}
+              {# Get default route from static_routes_lookup #}
+              {%- set routes_data = static_routes_lookup.get(hostname, {}) -%}
+              {%- set default_route = routes_data.routes | default([]) | selectattr('prefix', 'equalto', '0.0.0.0/0') | selectattr('interface', 'equalto', mgmt_int) | list | first | default({}) -%}
+              {%- set gateway_ip = default_route.next_hop | default('') -%}
+              {# Get management interface prefix from l3_interfaces_lookup #}
+              {%- set l3_data = l3_interfaces_lookup.get(hostname, {}) -%}
+              {%- set mgmt_iface = l3_data.interfaces | default([]) | selectattr('name', 'equalto', mgmt_int) | list | first | default({}) -%}
+              {%- set mgmt_ip = mgmt_iface.ipv4_address | default('') -%}
+              {%- set gateway_prefix = mgmt_ip.split('/')[1] | default('24') if mgmt_ip else '24' -%}
+              {%- set gateway = gateway_ip + '/' + gateway_prefix if gateway_ip else '' -%}
               {%- set profile = {
                 'fabric': switch.fabric,
                 'hostname': hostname,
@@ -215,7 +265,7 @@
         use_proxy: "{{ ansible_httpapi_use_proxy }}"
         path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{{ item.key }}/inventory/poap"
         method: POST
-        content: "{{ lookup('template', '../../templates/1.0-preprovision-new-switches.json.j2') }}"
+        content: "{{ lookup('template', '../../templates/1.0-preprovision-new-switches.j2') }}"
       loop: "{{ preprovision_by_fabric_filtered | dict2items }}"
       loop_control:
         label: "{{ item.key }} ({{ item.value | length }} switches)"

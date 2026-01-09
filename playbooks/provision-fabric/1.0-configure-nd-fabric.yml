@@ -24,7 +24,7 @@
 #   - POST /api/v1/manage/fabrics: Create new fabrics
 #
 # Templates Used:
-#   - 02-configure-nd-fabric.json.j2: Jinja2 template that converts fabric variables to ND API JSON format
+#   - 02-configure-nd-fabric.j2: Jinja2 template that converts fabric variables to ND API JSON format
 #
 # Tags:
 #   - configure-fabrics: Run only fabric configuration tasks
@@ -96,7 +96,7 @@
         login_domain: "{{ ansible_httpapi_login_domain | default('local') }}"
         path: /api/v1/manage/fabrics
         method: POST
-        content: "{{ lookup('template', '../../templates/02-configure-nd-fabric.json.j2') }}"
+        content: "{{ lookup('template', '../../templates/02-configure-nd-fabric.j2') }}"
       loop: "{{ fabrics_to_deploy }}"
       loop_control:
         label: "{{ item.FABRIC_NAME }}"

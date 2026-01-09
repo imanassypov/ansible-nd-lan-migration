@@ -22,7 +22,7 @@
 #   - POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create
 #
 # Templates Used:
-#   - 1.4-provision-vlan-policies.json.j2: Jinja2 template for VLAN policy JSON payload
+#   - 1.4-provision-vlan-policies.j2: Jinja2 template for VLAN policy JSON payload
 #
 # Tags:
 #   - preprovision-vlan-policies: Run only VLAN policy provisioning tasks
@@ -224,7 +224,7 @@
         use_proxy: "{{ ansible_httpapi_use_proxy }}"
         path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create"
         method: POST
-        content: "{{ lookup('template', playbook_dir + '/../../templates/1.5-provision-vlan-policies.json.j2') }}"
+        content: "{{ lookup('template', playbook_dir + '/../../templates/1.5-provision-vlan-policies.j2') }}"
       loop: "{{ vlan_policies_filtered }}"
       loop_control:
         label: "{{ item.hostname }}: VLAN {{ item.vlan_id }}"

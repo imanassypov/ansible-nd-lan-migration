@@ -15,12 +15,12 @@
 #   - OSPF routing protocol configurations
 #
 # Output Files Generated (per fabric):
-#   - mgmt_interface.yml: Management interface IP addresses per switch
 #   - switch_features.yml: Enabled NX-OS features per switch
 #   - vlan_database.yml: VLAN definitions and switch assignments
 #   - l3_interfaces.yml: Layer 3 interface configurations
 #   - l2_interfaces.yml: Layer 2 non-VPC interface configurations
 #   - l2_vpc_interfaces.yml: VPC interface configurations (consolidated by vpc_id)
+#   - static_routes.yml: Static route configurations per switch
 #
 # Tags:
 #   - profile-switches: Profile switch hardware and basic info
@@ -28,6 +28,7 @@
 #   - profile-vlans: Discover VLAN configurations
 #   - profile-l3-interfaces: Profile Layer 3 interfaces, HSRP, OSPF
 #   - profile-l2-interfaces: Profile Layer 2 interfaces, port-channels, VPCs
+#   - profile-static-routes: Profile static routes
 #
 # Prerequisites:
 #   - Inventory file (inventory/hosts.yml) with switch definitions
@@ -50,7 +51,7 @@
 #   - Fabric assignment and role (access, aggregation, core, etc.)
 #   - Migration destination info (if migrating to new hardware)
 #
-# Generates: fabrics/<fabric>/mgmt_interface.yml
+# Creates fabric directories for output files
 #------------------------------------------------------------------------------
 - name: Discover Existing Switches and Profile for migration
   hosts: switches
@@ -174,126 +175,6 @@
       delegate_to: localhost
       loop: "{{ all_switch_profiles | map(attribute='fabric') | unique | list }}"
 
-    # Get Layer 3 interface information to extract management IP address
-    - name: Get L3 Interface Information for Management IP
-      cisco.nxos.nxos_l3_interfaces:
-        state: gathered
-      register: l3_interface_info
-
-    # Get VRF interface membership to determine which VRF the management interface belongs to
-    - name: Get VRF Interface Information
-      cisco.nxos.nxos_command:
-        commands:
-          - "show vrf interface {{ mgmt_int | default('Vlan199') }}"
-      register: vrf_interface_info
-
-    # Parse VRF name from command output
-    # Output format: "Interface  VRF-Name   VRF-ID  Site-of-Origin"
-    - name: Parse VRF for management interface
-      set_fact:
-        mgmt_vrf: |
-          {%- set vrf_name = 'default' -%}
-          {%- if vrf_interface_info.stdout is defined and vrf_interface_info.stdout | length > 0 -%}
-            {%- for line in vrf_interface_info.stdout[0].split('\n') -%}
-              {%- set trimmed = line | trim -%}
-              {%- if trimmed | lower is search(mgmt_int | default('Vlan199') | lower) -%}
-                {%- set parts = trimmed.split() -%}
-                {%- if parts | length >= 2 -%}
-                  {%- set vrf_name = parts[1] -%}
-                {%- endif -%}
-              {%- endif -%}
-            {%- endfor -%}
-          {%- endif -%}
-          {{ vrf_name | trim }}
-
-    # Get default gateway from running config
-    # Look for static route matching management interface: "ip route 0.0.0.0/0 Vlan199 <gateway>"
-    - name: Get default route from running config
-      cisco.nxos.nxos_command:
-        commands:
-          - "show run | i 'ip route 0.0.0.0/0 {{ mgmt_int | default('Vlan199') }}'"
-      register: default_route_info
-
-    # Parse default gateway IP from static route config
-    # Output format: "ip route 0.0.0.0/0 Vlan199 198.18.24.65"
-    # parts[0]=ip, parts[1]=route, parts[2]=0.0.0.0/0, parts[3]=Vlan199, parts[4]=gateway
-    - name: Parse default gateway from running config
-      set_fact:
-        mgmt_static_default_gw: >-
-          {%- set ns = namespace(gateway='') -%}
-          {%- if default_route_info.stdout is defined and default_route_info.stdout | length > 0 -%}
-            {%- for line in default_route_info.stdout[0].split('\n') -%}
-              {%- set trimmed = line | trim -%}
-              {%- if trimmed | lower is search('ip route 0.0.0.0/0 ' + (mgmt_int | default('Vlan199')) | lower) -%}
-                {%- set parts = trimmed.split() -%}
-                {%- if parts | length >= 5 -%}
-                  {%- set ns.gateway = parts[4] -%}
-                {%- endif -%}
-              {%- endif -%}
-            {%- endfor -%}
-          {%- endif -%}
-          {{ ns.gateway }}
-
-    # Extract management IP address and VRF from the interface defined in mgmt_int variable
-    - name: Build management interface profile for current host
-      set_fact:
-        mgmt_interface_profile:
-          fabric: "{{ fabric }}"
-          hostname: "{{ inventory_hostname }}"
-          mgmt_interface: "{{ mgmt_int | default('Vlan199') }}"
-          mgmt_ip_address: "{{ (l3_interface_info.gathered | selectattr('name', 'equalto', mgmt_int | default('Vlan199')) | list | first | default({})).ipv4[0].address | default('') }}"
-          mgmt_interface_vrf: "{{ mgmt_vrf | trim }}"
-          mgmt_static_default: "{{ mgmt_static_default_gw | trim }}"
-      when: l3_interface_info.gathered is defined
-
-    # Aggregate all management interface profiles from all hosts
-    - name: Aggregate all management interface profiles
-      set_fact:
-        all_mgmt_interface_profiles: "{{ groups['switches'] | map('extract', hostvars, 'mgmt_interface_profile') | select('defined') | list }}"
-      run_once: true
-      delegate_to: localhost
-
-    - name: Display all management interface profiles
-      debug:
-        var: all_mgmt_interface_profiles
-      run_once: true
-      delegate_to: localhost
-
-    # Group management interfaces by fabric
-    - name: Build fabric-grouped management interface inventory
-      set_fact:
-        mgmt_interface_inventory: |
-          {%- set inventory = {} -%}
-          {%- for profile in all_mgmt_interface_profiles -%}
-            {%- if profile.fabric not in inventory -%}
-              {%- set _ = inventory.update({profile.fabric: []}) -%}
-            {%- endif -%}
-            {%- set _ = inventory[profile.fabric].append({
-              'hostname': profile.hostname,
-              'mgmt_interface': profile.mgmt_interface,
-              'mgmt_ip_address': profile.mgmt_ip_address,
-              'mgmt_interface_vrf': profile.mgmt_interface_vrf,
-              'mgmt_static_default': profile.mgmt_static_default
-            }) -%}
-          {%- endfor -%}
-          {{ inventory }}
-      run_once: true
-      delegate_to: localhost
-
-    # Generate management interface YAML for each fabric
-    - name: Generate mgmt_interface.yml for each fabric
-      template:
-        src: ../../templates/mgmt_interface.yml.j2
-        dest: "../../fabrics/{{ item.key }}/mgmt_interface.yml"
-      run_once: true
-      delegate_to: localhost
-      loop: "{{ mgmt_interface_inventory | dict2items }}"
-      loop_control:
-        label: "{{ item.key }}"
-      vars:
-        fabric_name: "{{ item.key }}"
-        mgmt_interfaces: "{{ item.value }}"
-
 #------------------------------------------------------------------------------
 # Play 2: Discover and Profile Enabled Features
 #------------------------------------------------------------------------------
@@ -394,7 +275,7 @@
     # Generate switch_features.yml file for each fabric
     - name: Generate switch_features.yml for each fabric
       template:
-        src: ../../templates/switch_features.yml.j2
+        src: ../../templates/switch_features.j2
         dest: "../../fabrics/{{ item.key }}/switch_features.yml"
       run_once: true
       delegate_to: localhost
@@ -495,7 +376,7 @@
     # Generate VLAN database YAML file for each fabric
     - name: Generate VLAN database YAML for each fabric
       template:
-        src: ../../templates/vlan_database.yml.j2
+        src: ../../templates/vlan_database.j2
         dest: "../../fabrics/{{ item.key }}/vlan_database.yml"
       run_once: true
       delegate_to: localhost
@@ -695,7 +576,7 @@
 
     - name: Generate L3 interfaces inventory YAML for each fabric
       template:
-        src: ../../templates/interfaces_inventory.yml.j2
+        src: ../../templates/interfaces_inventory.j2
         dest: "../../fabrics/{{ item.key }}/l3_interfaces.yml"
       run_once: true
       delegate_to: localhost
@@ -978,7 +859,7 @@
 
     - name: Generate VPC consolidated inventory YAML for each fabric
       template:
-        src: ../../templates/vpc_inventory.yml.j2
+        src: ../../templates/vpc_inventory.j2
         dest: "../../fabrics/{{ item.key }}/l2_vpc_interfaces.yml"
       run_once: true
       delegate_to: localhost
@@ -991,7 +872,7 @@
 
     - name: Generate L2 interfaces inventory YAML for each fabric
       template:
-        src: ../../templates/interfaces_inventory.yml.j2
+        src: ../../templates/interfaces_inventory.j2
         dest: "../../fabrics/{{ item.key }}/l2_interfaces.yml"
       run_once: true
       delegate_to: localhost
@@ -1001,3 +882,202 @@
       vars:
         fabric_name: "{{ item.key }}"
         fabric_interfaces: "{{ item.value }}"
+
+
+#------------------------------------------------------------------------------
+# Play 6: Profile Static Routes
+#------------------------------------------------------------------------------
+# Profiles all static routes configured on each switch including:
+#   - Default routes (0.0.0.0/0)
+#   - Specific prefix routes
+#   - VRF-specific routes
+#   - Routes with track objects
+#
+# Route parsing handles various formats:
+#   - ip route <prefix> <next-hop>
+#   - ip route <prefix> <interface> <next-hop>
+#   - ip route <prefix> <next-hop> name <name>
+#   - ip route <prefix> <next-hop> track <track-id>
+#   - vrf context <vrf> / ip route <prefix> <next-hop>
+#
+# Generates: fabrics/<fabric>/static_routes.yml
+#------------------------------------------------------------------------------
+- name: Profile Static Routes
+  hosts: switches
+  gather_facts: false
+
+  tags:
+    - profile-static-routes
+
+  tasks:
+    # Get all static routes from running configuration
+    - name: Get static routes from running config
+      cisco.nxos.nxos_command:
+        commands:
+          - "show running-config | section '^ip route'"
+      register: static_routes_output
+
+    # Get VRF-specific static routes
+    - name: Get VRF contexts with routes
+      cisco.nxos.nxos_command:
+        commands:
+          - "show running-config | section '^vrf context'"
+      register: vrf_routes_output
+
+    # Parse static routes from running config
+    - name: Parse static routes
+      ansible.builtin.set_fact:
+        parsed_static_routes: |
+          {%- set routes = [] -%}
+          {# Parse global static routes #}
+          {%- if static_routes_output.stdout is defined and static_routes_output.stdout | length > 0 -%}
+            {%- for line in static_routes_output.stdout[0].split('\n') -%}
+              {%- set trimmed = line | trim -%}
+              {%- if trimmed is search('^ip route ') -%}
+                {%- set parts = trimmed.split() -%}
+                {# Format: ip route <prefix> <next-hop> [name <name>] [track <id>] [tag <tag>] #}
+                {# Or: ip route <prefix> <interface> <next-hop> [name <name>] [track <id>] #}
+                {%- if parts | length >= 4 -%}
+                  {%- set prefix = parts[2] -%}
+                  {%- set next_hop = '' -%}
+                  {%- set interface = '' -%}
+                  {%- set route_name = '' -%}
+                  {%- set track_id = '' -%}
+                  {%- set tag_val = '' -%}
+                  {# Check if parts[3] is an interface (starts with Vlan, Ethernet, port-channel, etc) #}
+                  {%- if parts[3] is search('^(Vlan|Ethernet|port-channel|loopback|Null)', ignorecase=true) -%}
+                    {%- set interface = parts[3] -%}
+                    {%- if parts | length >= 5 -%}
+                      {%- set next_hop = parts[4] -%}
+                    {%- endif -%}
+                  {%- else -%}
+                    {%- set next_hop = parts[3] -%}
+                  {%- endif -%}
+                  {# Parse optional keywords #}
+                  {%- for i in range(4, parts | length) -%}
+                    {%- if parts[i] == 'name' and (i + 1) < parts | length -%}
+                      {%- set route_name = parts[i + 1] -%}
+                    {%- elif parts[i] == 'track' and (i + 1) < parts | length -%}
+                      {%- set track_id = parts[i + 1] -%}
+                    {%- elif parts[i] == 'tag' and (i + 1) < parts | length -%}
+                      {%- set tag_val = parts[i + 1] -%}
+                    {%- endif -%}
+                  {%- endfor -%}
+                  {%- set route = {
+                    'prefix': prefix,
+                    'next_hop': next_hop,
+                    'interface': interface,
+                    'vrf': '',
+                    'name': route_name,
+                    'track': track_id,
+                    'tag': tag_val
+                  } -%}
+                  {%- set _ = routes.append(route) -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+          {%- endif -%}
+          {# Parse VRF-specific static routes #}
+          {%- if vrf_routes_output.stdout is defined and vrf_routes_output.stdout | length > 0 -%}
+            {%- set current_vrf = '' -%}
+            {%- for line in vrf_routes_output.stdout[0].split('\n') -%}
+              {%- set trimmed = line | trim -%}
+              {%- if trimmed is search('^vrf context ') -%}
+                {%- set current_vrf = trimmed.split()[2] | default('') -%}
+              {%- elif trimmed is search('^ip route ') and current_vrf -%}
+                {%- set parts = trimmed.split() -%}
+                {%- if parts | length >= 4 -%}
+                  {%- set prefix = parts[2] -%}
+                  {%- set next_hop = '' -%}
+                  {%- set interface = '' -%}
+                  {%- set route_name = '' -%}
+                  {%- set track_id = '' -%}
+                  {%- set tag_val = '' -%}
+                  {%- if parts[3] is search('^(Vlan|Ethernet|port-channel|loopback|Null)', ignorecase=true) -%}
+                    {%- set interface = parts[3] -%}
+                    {%- if parts | length >= 5 -%}
+                      {%- set next_hop = parts[4] -%}
+                    {%- endif -%}
+                  {%- else -%}
+                    {%- set next_hop = parts[3] -%}
+                  {%- endif -%}
+                  {%- for i in range(4, parts | length) -%}
+                    {%- if parts[i] == 'name' and (i + 1) < parts | length -%}
+                      {%- set route_name = parts[i + 1] -%}
+                    {%- elif parts[i] == 'track' and (i + 1) < parts | length -%}
+                      {%- set track_id = parts[i + 1] -%}
+                    {%- elif parts[i] == 'tag' and (i + 1) < parts | length -%}
+                      {%- set tag_val = parts[i + 1] -%}
+                    {%- endif -%}
+                  {%- endfor -%}
+                  {%- set route = {
+                    'prefix': prefix,
+                    'next_hop': next_hop,
+                    'interface': interface,
+                    'vrf': current_vrf,
+                    'name': route_name,
+                    'track': track_id,
+                    'tag': tag_val
+                  } -%}
+                  {%- set _ = routes.append(route) -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+          {%- endif -%}
+          {{ routes }}
+
+    # Build route profile for current host
+    - name: Build static route profile for current host
+      ansible.builtin.set_fact:
+        static_route_profile:
+          fabric: "{{ fabric }}"
+          hostname: "{{ inventory_hostname }}"
+          routes: "{{ parsed_static_routes | from_yaml }}"
+
+    # Aggregate all static route profiles
+    - name: Aggregate all static route profiles
+      ansible.builtin.set_fact:
+        all_static_route_profiles: "{{ groups['switches'] | map('extract', hostvars, 'static_route_profile') | select('defined') | list }}"
+      run_once: true
+      delegate_to: localhost
+
+    - name: Display all static route profiles
+      ansible.builtin.debug:
+        var: all_static_route_profiles
+      run_once: true
+      delegate_to: localhost
+
+    # Group routes by fabric
+    - name: Build fabric-grouped static routes inventory
+      ansible.builtin.set_fact:
+        static_routes_inventory: |
+          {%- set inventory = {} -%}
+          {%- for profile in all_static_route_profiles -%}
+            {%- if profile.fabric not in inventory -%}
+              {%- set _ = inventory.update({profile.fabric: {}}) -%}
+            {%- endif -%}
+            {%- set routes_list = profile.routes if profile.routes is iterable and profile.routes is not string else [] -%}
+            {%- set _ = inventory[profile.fabric].update({
+              profile.hostname: {
+                'routes': routes_list
+              }
+            }) -%}
+          {%- endfor -%}
+          {{ inventory }}
+      run_once: true
+      delegate_to: localhost
+
+    # Generate static routes YAML for each fabric
+    - name: Generate static_routes.yml for each fabric
+      ansible.builtin.template:
+        src: ../../templates/static_routes.j2
+        dest: "../../fabrics/{{ item.key }}/static_routes.yml"
+      run_once: true
+      delegate_to: localhost
+      loop: "{{ (static_routes_inventory | from_yaml) | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      vars:
+        fabric_name: "{{ item.key }}"
+        fabric_routes: "{{ item.value }}"
+

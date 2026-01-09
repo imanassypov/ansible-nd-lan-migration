@@ -1,39 +1,39 @@
 ---
-# Playbook: 1.5-preprovision-default-route.yml
+# Playbook: 1.6-provision-default-route.yml
 # Purpose: Configure default static route on pre-provisioned switches via NDFC
 #
 # Description:
 #   This playbook configures default static routes on switches by:
-#   1. Loading mgmt_interface.yml to find default gateway configuration
+#   1. Loading static_routes.yml to find default gateway configuration
 #   2. Filtering switches with add_to_fabric: true
 #   3. Creating static route policy via bulk-create API
 #
 # Prerequisites:
-#   - Run 1.4-preprovision-svi.yml first to configure management SVI
-#   - Run discovery playbook to generate mgmt_interface.yml
+#   - Run 1.5-provision-vlan-policies.yml first
+#   - Run discovery playbook to generate static_routes.yml
 #
 # Variables Required (per switch in hosts.yml):
 #   - add_to_fabric: Set to true to include switch in provisioning
 #   - fabric: Target fabric name
 #   - destination_switch_sn: Target switch serial number
+#   - mgmt_int: Management interface name (e.g., Vlan199)
 #
-# Variables from mgmt_interface.yml:
-#   - switches.<hostname>.mgmt_static_default: Default gateway IP (e.g., 198.18.24.65)
-#   - switches.<hostname>.mgmt_interface_vrf: VRF for the route
+# Variables from static_routes.yml:
+#   - switches.<hostname>.routes: List of static routes including default route
 #
 # API Endpoints Used:
 #   - POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create
 #   - GET /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/switches/<serial>
 #
 # Templates Used:
-#   - 1.6-provision-default-route.json.j2: JSON template for static route policy
+#   - 1.6-provision-default-route.j2: JSON template for static route policy
 #
 # Tags:
 #   - preprovision-default-route: Run only default route provisioning tasks
 #
 # Example Usage:
-#   ansible-playbook ./playbooks/provision-access/1.5-preprovision-default-route.yml
-#   ansible-playbook ./playbooks/provision-access/1.5-preprovision-default-route.yml --tags preprovision-default-route
+#   ansible-playbook ./playbooks/provision-switch/1.6-provision-default-route.yml
+#   ansible-playbook ./playbooks/provision-switch/1.6-provision-default-route.yml --tags preprovision-default-route
 
 - name: Configure Default Routes on Pre-provisioned Switches
   hosts: nexus_dashboard
@@ -56,32 +56,33 @@
             | list
           }}
 
-    # Load management interface data from all fabrics
-    - name: Find all mgmt_interface.yml files
+    #--------------------------------------------------------------------------
+    # Load static routes data
+    #--------------------------------------------------------------------------
+    - name: Find all static_routes.yml files
       ansible.builtin.find:
         paths: "{{ playbook_dir }}/../../fabrics"
-        patterns: "mgmt_interface.yml"
+        patterns: "static_routes.yml"
         recurse: true
-      register: mgmt_interface_files
+      register: static_routes_files
       when: switches_to_provision | length > 0
 
-    - name: Load management interface data from all fabrics
+    - name: Load static routes data from all fabrics
       ansible.builtin.include_vars:
         file: "{{ item.path }}"
-        name: "mgmt_data_{{ item.path | dirname | basename }}"
-      loop: "{{ mgmt_interface_files.files | default([]) }}"
+        name: "routes_data_{{ item.path | dirname | basename }}"
+      loop: "{{ static_routes_files.files | default([]) }}"
       loop_control:
         label: "{{ item.path | dirname | basename }}"
       when: switches_to_provision | length > 0
 
-    # Build consolidated management interface lookup
-    - name: Build consolidated management interface lookup
+    - name: Build consolidated static routes lookup
       ansible.builtin.set_fact:
-        mgmt_interface_lookup: |
+        static_routes_lookup: |
           {%- set lookup = {} -%}
-          {%- for file in mgmt_interface_files.files | default([]) -%}
+          {%- for file in static_routes_files.files | default([]) -%}
             {%- set fabric_name = file.path | dirname | basename -%}
-            {%- set var_name = 'mgmt_data_' + fabric_name -%}
+            {%- set var_name = 'routes_data_' + fabric_name -%}
             {%- if hostvars[inventory_hostname][var_name] is defined -%}
               {%- set fabric_data = hostvars[inventory_hostname][var_name] -%}
               {%- if fabric_data.switches is defined -%}
@@ -94,7 +95,7 @@
           {{ lookup }}
       when: switches_to_provision | length > 0
 
-    # Extract static route configurations
+    # Extract static route configurations (default routes only)
     - name: Build static route configurations
       ansible.builtin.set_fact:
         static_routes: |
@@ -103,25 +104,29 @@
             {%- set hostname = switch.inventory_hostname -%}
             {%- set serial = switch.destination_switch_sn | default('') -%}
             {%- set fabric = switch.fabric | default('') -%}
-            {%- if serial and hostname in mgmt_interface_lookup -%}
-              {%- set mgmt_data = mgmt_interface_lookup[hostname] -%}
-              {%- if mgmt_data.mgmt_static_default is defined and mgmt_data.mgmt_static_default -%}
-                {%- set next_hop = mgmt_data.mgmt_static_default -%}
-                {%- set vrf = mgmt_data.mgmt_interface_vrf | default('') -%}
-                {%- if vrf == 'default' -%}
-                  {%- set vrf = '' -%}
+            {%- set mgmt_int = switch.mgmt_int | default('Vlan199') -%}
+            {%- if serial and hostname in static_routes_lookup -%}
+              {%- set routes_data = static_routes_lookup[hostname] -%}
+              {# Find default route (0.0.0.0/0) that uses the management interface #}
+              {%- for route in routes_data.routes | default([]) -%}
+                {%- if route.prefix == '0.0.0.0/0' and route.interface == mgmt_int -%}
+                  {%- set vrf = route.vrf | default('') -%}
+                  {%- if vrf == 'default' -%}
+                    {%- set vrf = '' -%}
+                  {%- endif -%}
+                  {%- set route_config = {
+                    'hostname': hostname,
+                    'serial_number': serial,
+                    'fabric_name': fabric,
+                    'next_hop': route.next_hop,
+                    'prefix': '0.0.0.0/0',
+                    'interface': route.interface | default(''),
+                    'vrf_name': vrf,
+                    'description': 'Default route'
+                  } -%}
+                  {%- set _ = routes.append(route_config) -%}
                 {%- endif -%}
-                {%- set route = {
-                  'hostname': hostname,
-                  'serial_number': serial,
-                  'fabric_name': fabric,
-                  'next_hop': next_hop,
-                  'prefix': '0.0.0.0/0',
-                  'vrf_name': vrf,
-                  'description': 'Default route'
-                } -%}
-                {%- set _ = routes.append(route) -%}
-              {%- endif -%}
+              {%- endfor -%}
             {%- endif -%}
           {%- endfor -%}
           {{ routes }}
@@ -191,7 +196,7 @@
           Static routes to configure (excluding existing): {{ static_routes_filtered | length }}
           Already configured (skipped): {{ (static_routes | length) - (static_routes_filtered | length) }}
           {% for route in static_routes_filtered %}
-          - {{ route.hostname }}: {{ route.prefix }} via {{ route.next_hop }}
+          - {{ route.hostname }}: {{ route.prefix }} via {{ route.next_hop }}{% if route.interface %} ({{ route.interface }}){% endif %}
           {% endfor %}
       when: static_routes_filtered is defined
 
@@ -206,7 +211,7 @@
         use_proxy: "{{ ansible_httpapi_use_proxy }}"
         path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create"
         method: POST
-        content: "{{ lookup('template', '../../templates/1.7-provision-default-route.json.j2') }}"
+        content: "{{ lookup('template', '../../templates/1.6-provision-default-route.j2') }}"
       loop: "{{ static_routes_filtered }}"
       loop_control:
         label: "{{ item.hostname }}: {{ item.prefix }} via {{ item.next_hop }}"
@@ -214,6 +219,7 @@
         serial_number: "{{ item.serial_number }}"
         next_hop: "{{ item.next_hop }}"
         prefix: "{{ item.prefix }}"
+        interface: "{{ item.interface | default('') }}"
         vrf_name: "{{ item.vrf_name }}"
         description: "{{ item.description }}"
       when:
@@ -228,7 +234,7 @@
           Already existed (skipped): {{ (static_routes | length) - (static_routes_filtered | default([]) | length) }}
           {% for result in route_results.results | default([]) %}
           {% if result.skipped is not defined or not result.skipped %}
-          - {{ result.item.hostname }}: {{ result.item.prefix }} via {{ result.item.next_hop }}: {{ 'SUCCESS' if result.failed is not defined or not result.failed else 'FAILED' }}
+          - {{ result.item.hostname }}: {{ result.item.prefix }} via {{ result.item.next_hop }}{% if result.item.interface %} ({{ result.item.interface }}){% endif %}: {{ 'SUCCESS' if result.failed is not defined or not result.failed else 'FAILED' }}
           {% endif %}
           {% endfor %}
       when: route_results is defined

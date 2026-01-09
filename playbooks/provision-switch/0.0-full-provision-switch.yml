@@ -1,7 +1,7 @@
 ---
 # Full Switch Provisioning Playbook
 # This playbook executes all provisioning playbooks in sequence
-# from 1.0 to 1.9 to fully provision switches via NDFC
+# from 1.0 to 1.8 to fully provision switches via NDFC
 
 - name: Full Switch Provisioning - Execute All Playbooks in Sequence
   hosts: localhost
@@ -19,12 +19,11 @@
             1.1 - Create Discovery User
             1.2 - Provision Features
             1.3 - Deploy VPC Domain
-            1.4 - Provision Interfaces
+            1.4 - Provision Interfaces (L2, VPC, SVI)
             1.5 - Provision VLAN Policies
-            1.6 - Provision SVI
-            1.7 - Provision Default Route
-            1.8 - Check POAP Status
-            1.9 - Bootstrap Switches
+            1.6 - Provision Default Route
+            1.7 - Check POAP Status
+            1.8 - Bootstrap Switches
           ═══════════════════════════════════════════════════════════════════════
 
 # 1.0 - Preprovision New Switches
@@ -51,21 +50,17 @@
 - name: "Step 1.5 - Provision VLAN Policies"
   ansible.builtin.import_playbook: 1.5-provision-vlan-policies.yml
 
-# 1.6 - Provision SVI
-- name: "Step 1.6 - Provision SVI"
-  ansible.builtin.import_playbook: 1.6-provision-svi.yml
+# 1.6 - Provision Default Route
+- name: "Step 1.6 - Provision Default Route"
+  ansible.builtin.import_playbook: 1.6-provision-default-route.yml
 
-# 1.7 - Provision Default Route
-- name: "Step 1.7 - Provision Default Route"
-  ansible.builtin.import_playbook: 1.7-provision-default-route.yml
+# 1.7 - Check POAP Status
+- name: "Step 1.7 - Check POAP Status"
+  ansible.builtin.import_playbook: 1.7-check-poap-status.yml
 
-# 1.8 - Check POAP Status
-- name: "Step 1.8 - Check POAP Status"
-  ansible.builtin.import_playbook: 1.8-check-poap-status.yml
-
-# 1.9 - Bootstrap Switches
-- name: "Step 1.9 - Bootstrap Switches"
-  ansible.builtin.import_playbook: 1.9-bootstrap-switches.yml
+# 1.8 - Bootstrap Switches
+- name: "Step 1.8 - Bootstrap Switches"
+  ansible.builtin.import_playbook: 1.8-bootstrap-switches.yml
 
 # Completion message
 - name: Full Switch Provisioning - Complete

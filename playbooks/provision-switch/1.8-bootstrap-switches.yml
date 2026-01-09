@@ -10,7 +10,7 @@
 #
 # Prerequisites:
 #   - Run 1.0-1.6 playbooks to pre-provision switch configuration
-#   - Switch has booted and connected to NDFC via POAP (verified by 1.7)
+#   - Switch has booted and connected to NDFC via POAP (verified by 1.7-check-poap-status.yml)
 #
 # Variables Required (per switch in hosts.yml):
 #   - add_to_fabric: Set to true to include switch in provisioning
@@ -25,14 +25,14 @@
 #   - POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/<fabric>/inventory/poap
 #
 # Templates Used:
-#   - 2.1-bootstrap-switches.json.j2: JSON template for bootstrap payload
+#   - 1.8-bootstrap-switches.j2: JSON template for bootstrap payload
 #
 # Tags:
 #   - bootstrap-switches: Run bootstrap tasks
 #
 # Example Usage:
-#   ansible-playbook ./playbooks/provision-access/1.8-bootstrap-switches.yml
-#   ansible-playbook ./playbooks/provision-access/1.8-bootstrap-switches.yml -v
+#   ansible-playbook ./playbooks/provision-switch/1.8-bootstrap-switches.yml
+#   ansible-playbook ./playbooks/provision-switch/1.8-bootstrap-switches.yml -v
 
 - name: Bootstrap Pre-provisioned Switches via POAP
   hosts: nexus_dashboard
@@ -101,36 +101,74 @@
           {{ lookup }}
       when: poap_inventory_query is defined
 
-    # Load management interface data for gateway info
-    - name: Find all mgmt_interface.yml files
+    #--------------------------------------------------------------------------
+    # Load static routes and L3 interface data for gateway info
+    #--------------------------------------------------------------------------
+    - name: Find all static_routes.yml files
       ansible.builtin.find:
         paths: "{{ playbook_dir }}/../../fabrics"
-        patterns: "mgmt_interface.yml"
+        patterns: "static_routes.yml"
         recurse: true
-      register: mgmt_interface_files
+      register: static_routes_files
       when: switches_to_bootstrap | length > 0
 
-    - name: Load management interface data from all fabrics
+    - name: Load static routes data from all fabrics
       ansible.builtin.include_vars:
         file: "{{ item.path }}"
-        name: "mgmt_data_{{ item.path | dirname | basename }}"
-      loop: "{{ mgmt_interface_files.files | default([]) }}"
+        name: "routes_data_{{ item.path | dirname | basename }}"
+      loop: "{{ static_routes_files.files | default([]) }}"
       loop_control:
         label: "{{ item.path | dirname | basename }}"
       when: switches_to_bootstrap | length > 0
 
-    - name: Build consolidated management interface lookup
+    - name: Build consolidated static routes lookup
       ansible.builtin.set_fact:
-        mgmt_interface_lookup: |
+        static_routes_lookup: |
           {%- set lookup = {} -%}
-          {%- for file in mgmt_interface_files.files | default([]) -%}
+          {%- for file in static_routes_files.files | default([]) -%}
             {%- set fabric_name = file.path | dirname | basename -%}
-            {%- set var_name = 'mgmt_data_' + fabric_name -%}
+            {%- set var_name = 'routes_data_' + fabric_name -%}
             {%- if hostvars[inventory_hostname][var_name] is defined -%}
               {%- set fabric_data = hostvars[inventory_hostname][var_name] -%}
               {%- if fabric_data.switches is defined -%}
                 {%- for hostname, data in fabric_data.switches.items() -%}
                   {%- set _ = lookup.update({hostname: data | combine({'fabric': fabric_name})}) -%}
+                {%- endfor -%}
+              {%- endif -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ lookup }}
+      when: switches_to_bootstrap | length > 0
+
+    - name: Find all l3_interfaces.yml files
+      ansible.builtin.find:
+        paths: "{{ playbook_dir }}/../../fabrics"
+        patterns: "l3_interfaces.yml"
+        recurse: true
+      register: l3_interfaces_files
+      when: switches_to_bootstrap | length > 0
+
+    - name: Load L3 interface data from all fabrics
+      ansible.builtin.include_vars:
+        file: "{{ item.path }}"
+        name: "l3_data_{{ item.path | dirname | basename }}"
+      loop: "{{ l3_interfaces_files.files | default([]) }}"
+      loop_control:
+        label: "{{ item.path | dirname | basename }}"
+      when: switches_to_bootstrap | length > 0
+
+    - name: Build consolidated L3 interfaces lookup
+      ansible.builtin.set_fact:
+        l3_interfaces_lookup: |
+          {%- set lookup = {} -%}
+          {%- for file in l3_interfaces_files.files | default([]) -%}
+            {%- set fabric_name = file.path | dirname | basename -%}
+            {%- set var_name = 'l3_data_' + fabric_name -%}
+            {%- if hostvars[inventory_hostname][var_name] is defined -%}
+              {%- set fabric_data = hostvars[inventory_hostname][var_name] -%}
+              {%- if fabric_data.switches is defined -%}
+                {%- for hostname, data in fabric_data.switches.items() -%}
+                  {%- set _ = lookup.update({hostname: {'interfaces': data.interfaces | default([]), 'fabric': fabric_name}}) -%}
                 {%- endfor -%}
               {%- endif -%}
             {%- endif -%}
@@ -147,12 +185,20 @@
             {%- set hostname = switch.inventory_hostname -%}
             {%- set serial = switch.destination_switch_sn | default('') -%}
             {%- set fabric = switch.fabric | default('') -%}
+            {%- set mgmt_int = switch.mgmt_int | default('Vlan199') -%}
             {%- set fabric_switches = poap_switches_lookup.get(fabric, {}) -%}
             {%- set poap_data = fabric_switches.get(serial, none) -%}
             {%- if poap_data -%}
-              {%- set mgmt_data = mgmt_interface_lookup.get(hostname, {}) -%}
-              {%- set gateway_prefix = mgmt_data.mgmt_ip_address.split('/')[1] | default('24') if mgmt_data.mgmt_ip_address is defined else '24' -%}
-              {%- set gateway = mgmt_data.mgmt_static_default + '/' + gateway_prefix if mgmt_data.mgmt_static_default is defined and mgmt_data.mgmt_static_default else '' -%}
+              {# Get default route from static_routes_lookup #}
+              {%- set routes_data = static_routes_lookup.get(hostname, {}) -%}
+              {%- set default_route = routes_data.routes | default([]) | selectattr('prefix', 'equalto', '0.0.0.0/0') | selectattr('interface', 'equalto', mgmt_int) | list | first | default({}) -%}
+              {%- set gateway_ip = default_route.next_hop | default('') -%}
+              {# Get management interface prefix from l3_interfaces_lookup #}
+              {%- set l3_data = l3_interfaces_lookup.get(hostname, {}) -%}
+              {%- set mgmt_iface = l3_data.interfaces | default([]) | selectattr('name', 'equalto', mgmt_int) | list | first | default({}) -%}
+              {%- set mgmt_ip = mgmt_iface.ipv4_address | default('') -%}
+              {%- set gateway_prefix = mgmt_ip.split('/')[1] | default('24') if mgmt_ip else '24' -%}
+              {%- set gateway = gateway_ip + '/' + gateway_prefix if gateway_ip else '' -%}
               {%- set config = {
                 'hostname': hostname,
                 'serial_number': serial,
@@ -187,7 +233,7 @@
             └─ Gateway: {{ config.gateway }}
           {% endfor %}
           {% if bootstrap_configs | length == 0 %}
-          No switches are connected via POAP yet. Run 1.7-check-poap-status.yml to verify.
+          No switches are connected via POAP yet. Run 1.7-check-poap-status.yml first to verify.
           {% endif %}
       when: bootstrap_configs is defined
 
@@ -202,7 +248,7 @@
         use_proxy: "{{ ansible_httpapi_use_proxy }}"
         path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{{ item.fabric }}/inventory/poap"
         method: POST
-        content: "{{ lookup('template', '../../templates/1.9-bootstrap-switches.json.j2') }}"
+        content: "{{ lookup('template', '../../templates/1.8-bootstrap-switches.j2') }}"
       loop: "{{ bootstrap_configs }}"
       loop_control:
         label: "{{ item.hostname }} ({{ item.serial_number }})"

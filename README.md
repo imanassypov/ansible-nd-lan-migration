@@ -48,12 +48,12 @@ ansible-playbook playbooks/provision-switch/0.0-full-provision-switch.yml
 ansible-dc-lan-migration/
 ├── fabrics/                                    # Generated artifacts per fabric
 │   └── <fabric-name>/
-│       ├── mgmt_interface.yml                  # Management interface configs
 │       ├── switch_features.yml                 # Enabled NX-OS features
 │       ├── vlan_database.yml                   # VLAN configurations
 │       ├── l2_interfaces.yml                   # L2 interface configs
 │       ├── l2_vpc_interfaces.yml               # VPC interface configs
-│       └── l3_interfaces.yml                   # L3 interface configs
+│       ├── l3_interfaces.yml                   # L3 interface configs (SVIs, loopbacks, routed)
+│       └── static_routes.yml                   # Static route configurations
 │
 ├── inventory/
 │   ├── hosts.yml                               # Switch and ND host definitions
@@ -76,10 +76,9 @@ ansible-dc-lan-migration/
 │       ├── 1.3-deploy-vpc-domain.yml
 │       ├── 1.4-provision-interfaces.yml
 │       ├── 1.5-provision-vlan-policies.yml
-│       ├── 1.6-provision-svi.yml
-│       ├── 1.7-provision-default-route.yml
-│       ├── 1.8-check-poap-status.yml
-│       └── 1.9-bootstrap-switches.yml
+│       ├── 1.6-provision-default-route.yml
+│       ├── 1.7-check-poap-status.yml
+│       └── 1.8-bootstrap-switches.yml
 │
 ├── templates/                                  # Jinja2 templates for API payloads
 │
@@ -98,23 +97,22 @@ The master playbook `0.0-full-provision-switch.yml` executes all playbooks in se
 
 | # | Playbook | Template(s) | Description |
 |---|----------|-------------|-------------|
-| 0.0 | `full-provision-switch.yml` | — | Master orchestration playbook that executes all provisioning steps 1.0-1.9 in sequence |
+| 0.0 | `full-provision-switch.yml` | — | Master orchestration playbook that executes all provisioning steps 1.0-1.8 in sequence |
 | 1.0 | `preprovision-new-switches.yml` | `1.0-preprovision-new-switches.json.j2` | Pre-provision switches to NDFC via POAP API. Registers switch serial number, model, version, IP, role, and gateway |
 | 1.1 | `create-discovery-user.yml` | `1.1-create-discovery-user.json.j2` | Create NDFC discovery user (switch_user policy) for switch authentication during discovery |
 | 1.2 | `provision-features.yml` | `1.2-provision-features.json.j2` | Configure NX-OS feature policies (LACP, LLDP, interface-vlan, etc.) using feature_lookup.yml mapping |
 | 1.3 | `deploy-vpc-domain.yml` | `1.3-deploy-vpc-domain.json.j2` | Deploy VPC domain configuration between aggregation switch pairs |
-| 1.4 | `provision-interfaces.yml` | `1.4-provision-interfaces.json.j2`, `1.4-provision-interfaces-vpc.json.j2` | Configure L2 interfaces (Ethernet, port-channels) and VPC interfaces with trunk/access modes |
+| 1.4 | `provision-interfaces.yml` | `1.4-provision-interfaces-*.json.j2` | Configure L2/L3 interfaces (Ethernet, port-channels, VPC, SVI) with trunk/access/routed modes |
 | 1.5 | `provision-vlan-policies.yml` | `1.5-provision-vlan-policies.json.j2` | Deploy VLAN policies from vlan_database.yml to switches |
-| 1.6 | `provision-svi.yml` | `1.6-provision-svi.json.j2` | Configure SVI (VLAN interface) for management with IP address and VRF |
-| 1.7 | `provision-default-route.yml` | `1.7-provision-default-route.json.j2` | Configure static default route (0.0.0.0/0) via management gateway |
-| 1.8 | `check-poap-status.yml` | — | Query POAP inventory to check if switches have connected and are ready for bootstrap |
-| 1.9 | `bootstrap-switches.yml` | `1.9-bootstrap-switches.json.j2` | Bootstrap pre-provisioned switches via POAP API to deploy Day-0 configuration |
+| 1.6 | `provision-default-route.yml` | `1.6-provision-default-route.json.j2` | Configure static default route (0.0.0.0/0) via management gateway |
+| 1.7 | `check-poap-status.yml` | — | Query POAP inventory to check if switches have connected and are ready for bootstrap |
+| 1.8 | `bootstrap-switches.yml` | `1.8-bootstrap-switches.json.j2` | Bootstrap pre-provisioned switches via POAP API to deploy Day-0 configuration |
 
 ### Discovery Workflow (discovery/)
 
 | Playbook | Template(s) | Description |
 |----------|-------------|-------------|
-| `1.0-profile-existing-switches.yml` | `mgmt_interface.yml.j2`, `switch_features.yml.j2`, `vlan_database.yml.j2`, `interfaces_inventory.yml.j2`, `vpc_inventory.yml.j2` | Profile existing switches via SSH to extract configurations into YAML files |
+| `1.0-profile-existing-switches.yml` | `switch_features.yml.j2`, `vlan_database.yml.j2`, `interfaces_inventory.j2`, `vpc_inventory.j2`, `static_routes.j2` | Profile existing switches via SSH to extract configurations into YAML files |
 
 ### Fabric Provisioning (provision-fabric/)
 
@@ -155,17 +153,14 @@ ansible-playbook playbooks/provision-switch/1.4-provision-interfaces.yml
 # 1.5 - Deploy VLAN policies
 ansible-playbook playbooks/provision-switch/1.5-provision-vlan-policies.yml
 
-# 1.6 - Configure management SVI
-ansible-playbook playbooks/provision-switch/1.6-provision-svi.yml
+# 1.6 - Configure default route
+ansible-playbook playbooks/provision-switch/1.6-provision-default-route.yml
 
-# 1.7 - Configure default route
-ansible-playbook playbooks/provision-switch/1.7-provision-default-route.yml
+# 1.7 - Check if switches connected via POAP
+ansible-playbook playbooks/provision-switch/1.7-check-poap-status.yml
 
-# 1.8 - Check if switches connected via POAP
-ansible-playbook playbooks/provision-switch/1.8-check-poap-status.yml
-
-# 1.9 - Bootstrap switches to deploy configuration
-ansible-playbook playbooks/provision-switch/1.9-bootstrap-switches.yml
+# 1.8 - Bootstrap switches to deploy configuration
+ansible-playbook playbooks/provision-switch/1.8-bootstrap-switches.yml
 ```
 
 ### Workflow Diagram
@@ -361,12 +356,12 @@ NDFC policy templates used by this project:
 | `feature_nxapi` | Enable NX-API feature | 1.2-provision-features |
 | `feature_vpc` | Enable VPC feature | 1.2-provision-features |
 | `create_vlan` | Create VLAN | 1.5-provision-vlan-policies |
-| `static_route_v4_v6` | Static route configuration | 1.7-provision-default-route |
+| `static_route_v4_v6` | Static route configuration | 1.6-provision-default-route |
 | `int_trunk_host` | Ethernet trunk interface | 1.4-provision-interfaces |
 | `int_access_host` | Ethernet access interface | 1.4-provision-interfaces |
 | `int_port_channel_trunk_host` | Port-channel trunk interface | 1.4-provision-interfaces |
 | `int_vpc_trunk_host` | VPC trunk interface | 1.4-provision-interfaces |
-| `int_vlan` | SVI (VLAN interface) | 1.6-provision-svi |
+| `int_vlan` | SVI (VLAN interface) | 1.4-provision-interfaces |
 
 ### C. Feature Lookup Mapping
 

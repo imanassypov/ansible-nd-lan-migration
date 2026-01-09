@@ -8,7 +8,7 @@
 #   serial numbers against the switches configured with add_to_fabric: true.
 #
 # Prerequisites:
-#   - Run 1.0-1.5 playbooks to pre-provision the switch
+#   - Run 1.0-1.6 playbooks to pre-provision the switch
 #   - Switch has been powered on and is going through POAP process
 #
 # Variables Required (per switch in hosts.yml):
@@ -23,8 +23,8 @@
 #   - check-poap-status: Run POAP status check
 #
 # Example Usage:
-#   ansible-playbook ./playbooks/provision-access/1.7-check-poap-status.yml
-#   ansible-playbook ./playbooks/provision-access/1.7-check-poap-status.yml -v
+#   ansible-playbook ./playbooks/provision-switch/1.7-check-poap-status.yml
+#   ansible-playbook ./playbooks/provision-switch/1.7-check-poap-status.yml -v
 
 - name: Check POAP Status for Pre-provisioned Switches
   hosts: nexus_dashboard

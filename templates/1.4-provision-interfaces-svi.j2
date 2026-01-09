@@ -1,0 +1,76 @@
+{#
+================================================================================
+Template: SVI Interface Configuration for dcnm_interface Module
+================================================================================
+Purpose:
+  Generate SVI (VLAN interface) configuration list for the cisco.dcnm.dcnm_interface
+  module to deploy L3 VLAN interfaces to NDFC.
+
+Module: cisco.dcnm.dcnm_interface
+  - type: svi (VLAN interface)
+  - state: replaced (idempotent configuration)
+
+Input Variables:
+  switches_to_provision    - List of switches with add_to_fabric: true
+  l3_interfaces_lookup     - L3 interface data per switch (from l3_interfaces.yml)
+
+Data Structure (l3_interfaces.yml):
+  switches:
+    <hostname>:
+      interfaces:
+        - name: Vlan199
+          type: svi
+          mode: vlan
+          enabled: True
+          ipv4_address: 198.18.24.66/26
+          ipv4_redirects: False
+          description: "Management_VLAN"
+
+Output:
+  List of SVI interface configurations in dcnm_interface format
+
+SVI Settings:
+  - mode: vlan
+  - admin_state: true
+  - disable_ip_redirects: true (security best practice)
+
+================================================================================
+#}
+{% set config = [] %}
+{% for switch in switches_to_provision %}
+  {% set hostname = switch.inventory_hostname %}
+  {% if hostname in l3_interfaces_lookup %}
+    {% set switch_data = l3_interfaces_lookup[hostname] %}
+    {% set switch_ip = hostvars[hostname]['ansible_host'] %}
+    {% for iface in switch_data.interfaces | default([]) %}
+      {% if iface.type == 'svi' and iface.ipv4_address is defined %}
+        {% set ip_parts = iface.ipv4_address.split('/') %}
+        {% set ip_addr = ip_parts[0] %}
+        {% set prefix_len = ip_parts[1] | default('24') | int %}
+        {# Extract VLAN ID from interface name (e.g., Vlan199 -> 199) #}
+        {% set vlan_id = iface.name | lower | regex_replace('^vlan', '') %}
+        {# Handle VRF - NDFC uses empty string for default VRF #}
+        {% set vrf = iface.vrf | default('') %}
+        {% if vrf == 'default' %}
+          {% set vrf = '' %}
+        {% endif %}
+        {% set svi_config = {
+          'name': 'vlan' ~ vlan_id,
+          'type': 'svi',
+          'switch': [switch_ip],
+          'deploy': true,
+          'profile': {
+            'admin_state': iface.enabled | default(true),
+            'mode': 'vlan',
+            'int_vrf': vrf,
+            'ipv4_addr': ip_addr,
+            'ipv4_mask_len': prefix_len,
+            'disable_ip_redirects': not (iface.ipv4_redirects | default(false))
+          }
+        } %}
+        {% set _ = config.append(svi_config) %}
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+{% endfor %}
+{{ config | to_json }}

@@ -8,6 +8,7 @@
      - next_hop: Next-hop IP address (e.g., "198.18.24.65")
      - prefix: Destination prefix (e.g., "0.0.0.0/0" for default route)
      - vrf_name: VRF name (empty string for default VRF)
+     - interface: Outgoing interface (optional, e.g., "Vlan199")
      - route_preference: Route preference/AD (optional, empty for default)
      - next_hop_name: Name for next-hop (optional)
      - tag: Route tag (optional)
@@ -17,7 +18,7 @@
 {
   "nvPairs": {
     "vrfName": "{{ vrf_name | default('') }}",
-    "staticRoutes": "{\"staticRoutes\":[{\"IP_VERSION\":\"IPv4\",\"ipv4Prefix\":\"{{ prefix | default('0.0.0.0/0') }}\",\"ipv6Prefix\":\"\",\"nextHop\":\"{{ next_hop }}\",\"routePreference\":\"{{ route_preference | default('') }}\",\"nextHopName\":\"{{ next_hop_name | default('') }}\",\"tag\":\"{{ tag | default('') }}\",\"trackId\":\"{{ track_id | default('') }}\",\"nextHopVrf\":\"{{ next_hop_vrf | default('') }}\"}]}",
+    "staticRoutes": "{\"staticRoutes\":[{\"IP_VERSION\":\"IPv4\",\"ipv4Prefix\":\"{{ prefix | default('0.0.0.0/0') }}\",\"ipv6Prefix\":\"\",\"nextHop\":\"{{ next_hop }}\",\"interface\":\"{{ interface | default('') }}\",\"routePreference\":\"{{ route_preference | default('') }}\",\"nextHopName\":\"{{ next_hop_name | default('') }}\",\"tag\":\"{{ tag | default('') }}\",\"trackId\":\"{{ track_id | default('') }}\",\"nextHopVrf\":\"{{ next_hop_vrf | default('') }}\"}]}",
     "SERIAL_NUMBER": "",
     "SOURCE": "",
     "POLICY_ID": ""
