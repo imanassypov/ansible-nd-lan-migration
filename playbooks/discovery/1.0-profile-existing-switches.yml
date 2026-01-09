@@ -15,6 +15,7 @@
 #   - OSPF routing protocol configurations
 #
 # Output Files Generated (per fabric):
+#   - switch_details.yml: Switch hardware info (serial, model, software version)
 #   - switch_features.yml: Enabled NX-OS features per switch
 #   - vlan_database.yml: VLAN definitions and switch assignments
 #   - l3_interfaces.yml: Layer 3 interface configurations
@@ -85,6 +86,7 @@
           hostname: "{{ switch_facts.ansible_facts.ansible_net_hostname }}"
           source_ip_address: "{{ ansible_host }}"
           source_serial_number: "{{ switch_facts.ansible_facts.ansible_net_serialnum }}"
+          license_hostid: "{{ switch_facts.ansible_facts.ansible_net_license_hostid | default(switch_facts.ansible_facts.ansible_net_serialnum) }}"
           ip_address: "{{ ansible_host }}"
           target_serial_number: "{{ switch_facts.ansible_facts.ansible_net_serialnum }}"
           target_model: "{{ switch_facts.ansible_facts.ansible_net_platform }}"
@@ -174,6 +176,20 @@
       run_once: true
       delegate_to: localhost
       loop: "{{ all_switch_profiles | map(attribute='fabric') | unique | list }}"
+
+    # Generate switch_details.yml for each fabric with serial numbers and versions
+    - name: Generate switch_details.yml for each fabric
+      template:
+        src: ../../templates/switch_details.yml.j2
+        dest: "../../fabrics/{{ item.name }}/switch_details.yml"
+      run_once: true
+      delegate_to: localhost
+      loop: "{{ switch_inventory }}"
+      loop_control:
+        label: "{{ item.name }}"
+      vars:
+        fabric_name: "{{ item.name }}"
+        fabric_switches: "{{ item.switches }}"
 
 #------------------------------------------------------------------------------
 # Play 2: Discover and Profile Enabled Features

@@ -60,6 +60,37 @@
             | list
           }}
 
+    # Load switch_details.yml to get serial numbers for discovered switches
+    - name: Find switch_details.yml files
+      ansible.builtin.find:
+        paths: "{{ playbook_dir }}/../../fabrics"
+        patterns: "switch_details.yml"
+        recurse: true
+      delegate_to: localhost
+      register: switch_details_files
+
+    - name: Load switch details from all fabrics
+      ansible.builtin.include_vars:
+        file: "{{ item }}"
+        name: "switch_details_{{ item | dirname | basename | replace('-', '_') }}"
+      loop: "{{ switch_details_files.files | map(attribute='path') | list }}"
+      loop_control:
+        label: "{{ item | dirname | basename }}"
+
+    - name: Build consolidated switch details lookup
+      ansible.builtin.set_fact:
+        switch_details_lookup: |
+          {%- set lookup = {} -%}
+          {%- for var_name in hostvars[inventory_hostname] | select('match', '^switch_details_') -%}
+            {%- set details = hostvars[inventory_hostname][var_name] -%}
+            {%- if details.switches is defined -%}
+              {%- for switch in details.switches -%}
+                {%- set _ = lookup.update({switch.hostname: switch}) -%}
+              {%- endfor -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ lookup }}
+
     - name: Display switches to provision discovery user
       ansible.builtin.debug:
         msg: |
@@ -69,7 +100,11 @@
           Switches to provision: {{ switches_to_provision | length }}
           Discovery username: {{ discovery_username }}
           {% for switch in switches_to_provision %}
-          - {{ switch.inventory_hostname }} ({{ switch.destination_switch_sn | default('NO SERIAL') }})
+          {%- set sn = switch.destination_switch_sn | default('') -%}
+          {%- if not sn and switch.inventory_hostname in switch_details_lookup -%}
+            {%- set sn = switch_details_lookup[switch.inventory_hostname].license_hostid | default('') -%}
+          {%- endif %}
+          - {{ switch.inventory_hostname }} ({{ sn if sn else 'NO SERIAL' }})
           {% endfor %}
           ═══════════════════════════════════════════════════════════════════════
       when: switches_to_provision | length > 0
@@ -89,6 +124,9 @@
           {%- for switch in switches_to_provision -%}
             {%- set hostname = switch.inventory_hostname -%}
             {%- set serial = switch.destination_switch_sn | default('') -%}
+            {%- if not serial and hostname in switch_details_lookup -%}
+              {%- set serial = switch_details_lookup[hostname].license_hostid | default('') -%}
+            {%- endif -%}
             {%- if serial -%}
               {%- set config = {
                 'hostname': hostname,

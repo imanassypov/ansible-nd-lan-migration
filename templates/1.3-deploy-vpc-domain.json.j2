@@ -1,0 +1,68 @@
+{#
+================================================================================
+Template: VPC Domain Configuration for NDFC REST API
+================================================================================
+Purpose:
+  Generate VPC pair JSON payload for the NDFC REST API endpoint:
+  /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/vpcpair
+
+API Method: POST (create VPC pair)
+
+Input Variables:
+  item - Single VPC domain definition with serial numbers populated:
+    - PEER1_SERIAL / PEER2_SERIAL: Switch serial numbers
+    - DOMAIN_ID: VPC domain ID (1-1000)
+    - PEER1_KEEP_ALIVE_LOCAL_IP / PEER2_KEEP_ALIVE_LOCAL_IP: Keepalive source IPs
+    - KEEPALIVE_VRF: VRF for keepalive messages
+    - PEER1_PCID / PEER2_PCID: Peer-link port-channel IDs
+    - PEER1_MEMBER_INTERFACES / PEER2_MEMBER_INTERFACES: Peer-link member interfaces
+    - ALLOWED_VLANS: VLANs allowed on peer-link
+
+Output:
+  Single VPC pair JSON object for REST API POST
+
+================================================================================
+#}
+{
+  "useVirtualPeerLink": {{ item.VIRTUAL_PEER_LINK | default(false) | lower }},
+  "peerOneId": "{{ item.PEER1_SERIAL | default('') }}",
+  "peerTwoId": "{{ item.PEER2_SERIAL | default('') }}",
+  "templateName": "{{ item.TEMPLATE_NAME | default('vpc_pair') }}",
+  "nvPairs": {
+    "FABRIC_NAME": "{{ item.FABRIC_NAME | default('') }}",
+    "DOMAIN_ID": "{{ item.DOMAIN_ID | default('1') }}",
+    "PEER1_KEEP_ALIVE_LOCAL_IP": "{{ item.PEER1_KEEP_ALIVE_LOCAL_IP | default('') }}",
+    "PEER2_KEEP_ALIVE_LOCAL_IP": "{{ item.PEER2_KEEP_ALIVE_LOCAL_IP | default('') }}",
+    "KEEP_ALIVE_VRF": "{{ item.KEEPALIVE_VRF | default('management') }}",
+    "KEEP_ALIVE_HOLD_TIMEOUT": "{{ item.KEEP_ALIVE_HOLD_TIMEOUT | default('3') }}",
+    "isVpcPlus": {{ item.IS_VPC_PLUS | default(false) | lower }},
+{% if item.IS_VPC_PLUS is defined and item.IS_VPC_PLUS %}
+    "fabricPath_switch_id": "{{ item.FABRICPATH_SWITCH_ID | default('') }}",
+{% endif %}
+    "isVTEPS": {{ item.IS_VTEPS | default(false) | lower }},
+{% if item.IS_VTEPS is defined and item.IS_VTEPS %}
+    "NVE_INTERFACE": "{{ item.NVE_INTERFACE | default('') }}",
+    "PEER1_SOURCE_LOOPBACK": "{{ item.PEER1_SOURCE_LOOPBACK | default('') }}",
+    "PEER2_SOURCE_LOOPBACK": "{{ item.PEER2_SOURCE_LOOPBACK | default('') }}",
+    "PEER1_PRIMARY_IP": "{{ item.PEER1_PRIMARY_IP | default('') }}",
+    "PEER2_PRIMARY_IP": "{{ item.PEER2_PRIMARY_IP | default('') }}",
+    "LOOPBACK_SECONDARY_IP": "{{ item.LOOPBACK_SECONDARY_IP | default('') }}",
+{% endif %}
+    "PEER1_DOMAIN_CONF": "{{ item.PEER1_DOMAIN_CONF | default('') }}",
+    "PEER2_DOMAIN_CONF": "{{ item.PEER2_DOMAIN_CONF | default('') }}",
+    "clear_policy": {{ item.CLEAR_POLICY | default('false') }},
+    "PEER1_PCID": "{{ item.PEER1_PCID | default('') }}",
+    "PEER2_PCID": "{{ item.PEER2_PCID | default('') }}",
+    "PEER1_MEMBER_INTERFACES": "{{ item.PEER1_MEMBER_INTERFACES | join(',') if item.PEER1_MEMBER_INTERFACES is iterable and item.PEER1_MEMBER_INTERFACES is not string else item.PEER1_MEMBER_INTERFACES | default('') }}",
+    "PEER2_MEMBER_INTERFACES": "{{ item.PEER2_MEMBER_INTERFACES | join(',') if item.PEER2_MEMBER_INTERFACES is iterable and item.PEER2_MEMBER_INTERFACES is not string else item.PEER2_MEMBER_INTERFACES | default('') }}",
+    "PC_MODE": "{{ item.PC_MODE | default('active') }}",
+    "PEER1_PO_DESC": "{{ item.PEER1_PC_DESCRIPTION | default('') }}",
+    "PEER2_PO_DESC": "{{ item.PEER2_PC_DESCRIPTION | default('') }}",
+    "ADMIN_STATE": "{{ item.ADMIN_STATE | default('true') }}",
+    "ALLOWED_VLANS": "{{ item.ALLOWED_VLANS | default('all') }}",
+    "PEER1_NATIVE_VLAN": "{{ item.PEER1_NATIVE_VLAN | default('1') }}",
+    "PEER2_NATIVE_VLAN": "{{ item.PEER2_NATIVE_VLAN | default('1') }}",
+    "PEER1_PO_CONF": "{{ item.PEER1_PO_CONF | default('') }}",
+    "PEER2_PO_CONF": "{{ item.PEER2_PO_CONF | default('') }}"
+  }
+}

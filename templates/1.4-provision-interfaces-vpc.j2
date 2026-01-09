@@ -38,6 +38,10 @@ VPC Settings:
 {% for fabric_name in fabrics_to_process | default([]) %}
   {% if fabric_name in vpc_interfaces_by_fabric %}
     {% for vpc in vpc_interfaces_by_fabric[fabric_name] %}
+      {# Skip vpc_id 1 as it's typically the VPC peer-link managed by VPC domain #}
+      {% if vpc.vpc_id | int == 1 %}
+        {# Skip VPC peer-link #}
+      {% else %}
       {% set peer1_name = vpc.switches[0] %}
       {% set peer2_name = vpc.switches[1] %}
       {% set peer1_ip = hostvars[peer1_name]['ansible_host'] %}
@@ -62,7 +66,7 @@ VPC Settings:
       {% set vpc_config = {
         'name': vpc_name,
         'type': 'vpc',
-        'switch': [[peer1_ip, peer2_ip]],
+        'switch': [peer1_ip, peer2_ip],
         'deploy': true,
         'profile': {
           'admin_state': true,
@@ -97,6 +101,7 @@ VPC Settings:
         }) %}
       {% endif %}
       {% set _ = config.append(vpc_config) %}
+      {% endif %}{# end skip vpc_id 1 #}
     {% endfor %}
   {% endif %}
 {% endfor %}

@@ -1,21 +1,25 @@
 ---
 # Playbook: 1.3-deploy-vpc-domain.yml
-# Purpose: Configure and deploy VPC domain to Nexus Dashboard using dcnm_vpc_pair module
+# Purpose: Configure and deploy VPC domain to Nexus Dashboard using REST API
 #
 # Description:
 #   This playbook configures VPC domains on aggregation switches by:
-#   1. Querying aggregation switches to get IP addresses
-#   2. Building VPC pair configuration from J2 template
-#   3. Deploying VPC domains via cisco.dcnm.dcnm_vpc_pair module
+#   1. Querying switches to get serial numbers and IP addresses
+#   2. Checking if VPC pairs already exist in NDFC via REST API
+#   3. Building VPC pair configuration from J2 template
+#   4. Deploying VPC domains via cisco.nd.nd_rest module
 #
 # Variables Required:
 #   - vpc_domains: List of VPC domain definitions (from fabric_definitions.yml)
 #
 # Module Used:
-#   - cisco.dcnm.dcnm_vpc_pair: DCNM module for managing VPC switch pairs
+#   - cisco.nd.nd_rest: ND REST API module for VPC pair management
+#
+# API Endpoint:
+#   - /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/vpcpair
 #
 # Templates Used:
-#   - 1.3-deploy-vpc-domain.j2: Jinja2 template for VPC pair configuration
+#   - 1.3-deploy-vpc-domain.json.j2: Jinja2 template for VPC pair API payload
 #
 # Tags:
 #   - deploy-vpc-domain: Run only VPC domain deployment tasks
@@ -29,6 +33,9 @@
 
   vars:
     ansible_command_timeout: 300
+    ansible_connect_timeout: 300
+    ansible_persistent_command_timeout: 300
+    vpc_api_path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/vpcpair"
 
   tags:
     - deploy-vpc-domain
@@ -44,10 +51,10 @@
       when: vpc_domains | default([]) | length == 0
 
     # ========================================================================
-    # Phase 2: Query switches to get IP addresses
+    # Phase 2: Query switches to get IP addresses and serial numbers
     # ========================================================================
 
-    - name: Query switches in each fabric
+    - name: Query all switches in each fabric
       cisco.nd.nd_rest:
         host: "{{ ansible_host }}"
         username: "{{ ansible_user }}"
@@ -55,7 +62,7 @@
         use_ssl: "{{ ansible_httpapi_use_ssl }}"
         validate_certs: "{{ ansible_httpapi_validate_certs }}"
         use_proxy: "{{ ansible_httpapi_use_proxy }}"
-        path: "/api/v1/manage/fabrics/{{ item }}/switches?filter=switchRole%3Aaggregation"
+        path: "/api/v1/manage/fabrics/{{ item }}/switches"
         method: GET
       loop: "{{ vpc_domains | map(attribute='FABRIC_NAME') | unique | list }}"
       loop_control:
@@ -80,7 +87,7 @@
           {{ lookup }}
 
     # ========================================================================
-    # Phase 3: Build VPC domain configurations with IP addresses
+    # Phase 3: Build VPC domain configurations with IP addresses and serials
     # ========================================================================
 
     - name: Build VPC domain configurations
@@ -116,60 +123,187 @@
           To deploy: {{ vpc_domains_to_deploy | length }}
           {% for domain in vpc_domains_to_deploy %}
           - {{ domain.FABRIC_NAME }}: Domain {{ domain.DOMAIN_ID }} ({{ domain.PEER1_NAME }} <-> {{ domain.PEER2_NAME }})
+            Peer1 Serial: {{ domain.PEER1_SERIAL }}
+            Peer2 Serial: {{ domain.PEER2_SERIAL }}
           {% endfor %}
           ═══════════════════════════════════════════════════════════════════════
 
     # ========================================================================
-    # Phase 4: Build VPC configuration from template
+    # Phase 4: Check for existing VPC pairs in NDFC via REST API
     # ========================================================================
 
-    - name: Build VPC pair configuration from template
-      ansible.builtin.set_fact:
-        vpc_pair_config: "{{ lookup('template', playbook_dir + '/../../templates/1.3-deploy-vpc-domain.j2') | from_json }}"
+    - name: Query existing VPC pairs in NDFC
+      cisco.nd.nd_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_password }}"
+        use_ssl: "{{ ansible_httpapi_use_ssl }}"
+        validate_certs: "{{ ansible_httpapi_validate_certs }}"
+        use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        path: "{{ vpc_api_path }}"
+        method: GET
       when: vpc_domains_to_deploy | length > 0
+      register: existing_vpc_pairs
 
-    - name: Display VPC pairs to configure
+    - name: Build set of existing VPC pair serial numbers
+      ansible.builtin.set_fact:
+        existing_vpc_serials: |
+          {%- set serials = [] -%}
+          {%- for vpc in existing_vpc_pairs.current | default([]) -%}
+            {%- set _ = serials.append(vpc.peerOneId | default('')) -%}
+            {%- set _ = serials.append(vpc.peerTwoId | default('')) -%}
+          {%- endfor -%}
+          {{ serials | unique | reject('equalto', '') | list }}
+      when: existing_vpc_pairs is defined
+
+    - name: Filter out VPC domains where switches already have VPC configured
+      ansible.builtin.set_fact:
+        vpc_domains_to_create: |
+          {%- set to_create = [] -%}
+          {%- for domain in vpc_domains_to_deploy -%}
+            {%- set ns = namespace(vpc_exists=false) -%}
+            {%- for vpc in existing_vpc_pairs.current | default([]) -%}
+              {# Check if both peer serials match an existing VPC pair (in either order) #}
+              {%- if (vpc.peerOneId == domain.PEER1_SERIAL and vpc.peerTwoId == domain.PEER2_SERIAL) or
+                     (vpc.peerOneId == domain.PEER2_SERIAL and vpc.peerTwoId == domain.PEER1_SERIAL) -%}
+                {%- set ns.vpc_exists = true -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- if not ns.vpc_exists -%}
+              {%- set _ = to_create.append(domain) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ to_create }}
+      when: existing_vpc_pairs is defined
+
+    - name: Display VPC creation status
       ansible.builtin.debug:
         msg: |
-          Configuring {{ vpc_pair_config | length }} VPC pair(s):
-          {% for vpc in vpc_pair_config %}
-          - Domain {{ vpc.profile.DOMAIN_ID }} on {{ vpc.peerOneId }} <-> {{ vpc.peerTwoId }} (Config Mirroring: {{ vpc.profile.ENABLE_MIRROR_CONFIG }})
+          ═══════════════════════════════════════════════════════════════════════
+          VPC PAIR STATUS CHECK
+          ═══════════════════════════════════════════════════════════════════════
+          Existing VPC pairs in NDFC: {{ existing_vpc_pairs.current | default([]) | length }}
+          VPC domains to deploy: {{ vpc_domains_to_deploy | length }}
+          VPC domains to create (new): {{ vpc_domains_to_create | default([]) | length }}
+          VPC domains already configured: {{ vpc_domains_to_deploy | length - (vpc_domains_to_create | default([]) | length) }}
+          {% if existing_vpc_pairs.current | default([]) | length > 0 %}
+          
+          Existing VPC pairs:
+          {% for vpc in existing_vpc_pairs.current | default([]) %}
+            - ID {{ vpc.id }}: {{ vpc.peerOneName | default(vpc.peerOneId) }} ({{ vpc.peerOneId }}) <-> {{ vpc.peerTwoName | default(vpc.peerTwoId) }} ({{ vpc.peerTwoId }})
           {% endfor %}
-      when: vpc_pair_config is defined and vpc_pair_config | length > 0
+          {% endif %}
+          ═══════════════════════════════════════════════════════════════════════
+      when: existing_vpc_pairs is defined
 
     # ========================================================================
-    # Phase 5: Deploy VPC domain configuration
+    # Phase 5: Skip if all VPC pairs already exist
     # ========================================================================
 
-    - name: Deploy VPC pairs via dcnm_vpc_pair
-      cisco.dcnm.dcnm_vpc_pair:
-        src_fabric: "{{ vpc_domains_to_deploy[0].FABRIC_NAME }}"
-        deploy: true
-        state: replaced
-        config: "{{ vpc_pair_config }}"
-      when: vpc_pair_config is defined and vpc_pair_config | length > 0
-      register: vpc_deployment_result
-
-    - name: Display VPC deployment result
+    - name: Skip VPC deployment - all VPC pairs already exist
       ansible.builtin.debug:
         msg: |
           ═══════════════════════════════════════════════════════════════════════
-          VPC DOMAIN DEPLOYMENT RESULT
+          VPC DOMAIN DEPLOYMENT SKIPPED
           ═══════════════════════════════════════════════════════════════════════
-          - Changed: {{ vpc_deployment_result.changed | default(false) }}
-          - Response: {{ vpc_deployment_result.response | default([]) | length }} operation(s)
+          All VPC pairs already exist in NDFC. No new VPC pairs to create.
           ═══════════════════════════════════════════════════════════════════════
-      when: vpc_deployment_result is defined
+      when: vpc_domains_to_create | default([]) | length == 0 and vpc_domains_to_deploy | length > 0
 
     # ========================================================================
-    # Phase 6: Query and display configured VPC pairs
+    # Phase 6: Deploy VPC domains via REST API
+    # ========================================================================
+
+    - name: Display VPC pairs to create
+      ansible.builtin.debug:
+        msg: |
+          Creating {{ vpc_domains_to_create | length }} VPC pair(s):
+          {% for domain in vpc_domains_to_create %}
+          - Domain {{ domain.DOMAIN_ID }} on {{ domain.PEER1_SERIAL }} <-> {{ domain.PEER2_SERIAL }}
+          {% endfor %}
+      when: vpc_domains_to_create | default([]) | length > 0
+
+    - name: Create VPC pairs via REST API
+      cisco.nd.nd_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_password }}"
+        use_ssl: "{{ ansible_httpapi_use_ssl }}"
+        validate_certs: "{{ ansible_httpapi_validate_certs }}"
+        use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        path: "{{ vpc_api_path }}"
+        method: POST
+        content: "{{ lookup('template', playbook_dir + '/../../templates/1.3-deploy-vpc-domain.json.j2') }}"
+      loop: "{{ vpc_domains_to_create | default([]) }}"
+      loop_control:
+        label: "Domain {{ item.DOMAIN_ID }}: {{ item.PEER1_NAME }} <-> {{ item.PEER2_NAME }}"
+      register: vpc_create_results
+      when: vpc_domains_to_create | default([]) | length > 0
+
+    - name: Display VPC creation results
+      ansible.builtin.debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════════════════
+          VPC DOMAIN CREATION RESULTS
+          ═══════════════════════════════════════════════════════════════════════
+          {% for result in vpc_create_results.results | default([]) %}
+          - Domain {{ result.item.DOMAIN_ID }}: {{ 'SUCCESS' if result.current is defined else 'FAILED' }}
+            {{ result.item.PEER1_NAME }} ({{ result.item.PEER1_SERIAL }}) <-> {{ result.item.PEER2_NAME }} ({{ result.item.PEER2_SERIAL }})
+          {% endfor %}
+          ═══════════════════════════════════════════════════════════════════════
+      when: vpc_create_results.results is defined
+
+    # ========================================================================
+    # Phase 7: Deploy VPC configuration to switches
+    # ========================================================================
+
+    - name: Deploy VPC configuration to switches
+      cisco.nd.nd_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_password }}"
+        use_ssl: "{{ ansible_httpapi_use_ssl }}"
+        validate_certs: "{{ ansible_httpapi_validate_certs }}"
+        use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        path: "{{ vpc_api_path }}/deploy"
+        method: POST
+        content: |
+          {
+            "peerOneId": "{{ item.PEER1_SERIAL }}",
+            "peerTwoId": "{{ item.PEER2_SERIAL }}"
+          }
+      loop: "{{ vpc_domains_to_create | default([]) }}"
+      loop_control:
+        label: "Deploy Domain {{ item.DOMAIN_ID }}"
+      register: vpc_deploy_results
+      when: vpc_domains_to_create | default([]) | length > 0
+
+    - name: Display VPC deployment results
+      ansible.builtin.debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════════════════
+          VPC DOMAIN DEPLOYMENT RESULTS
+          ═══════════════════════════════════════════════════════════════════════
+          {% for result in vpc_deploy_results.results | default([]) %}
+          - Domain {{ result.item.DOMAIN_ID }}: {{ 'DEPLOYED' if result.current is defined else 'FAILED' }}
+          {% endfor %}
+          ═══════════════════════════════════════════════════════════════════════
+      when: vpc_deploy_results.results is defined
+
+    # ========================================================================
+    # Phase 8: Query and display configured VPC pairs
     # ========================================================================
 
     - name: Query all configured VPC domains
-      cisco.dcnm.dcnm_vpc_pair:
-        src_fabric: "{{ vpc_domains_to_deploy[0].FABRIC_NAME }}"
-        state: query
-        config: []
+      cisco.nd.nd_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_password }}"
+        use_ssl: "{{ ansible_httpapi_use_ssl }}"
+        validate_certs: "{{ ansible_httpapi_validate_certs }}"
+        use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        path: "{{ vpc_api_path }}"
+        method: GET
       register: all_vpc_pairs_query
       when: vpc_domains_to_deploy | length > 0
 
@@ -179,8 +313,8 @@
           ═══════════════════════════════════════════════════════════════════════
           CONFIGURED VPC DOMAINS
           ═══════════════════════════════════════════════════════════════════════
-          Total VPC Domains: {{ all_vpc_pairs_query.response | default([]) | length }}
-          {% for vpc in all_vpc_pairs_query.response | default([]) %}
+          Total VPC Domains: {{ all_vpc_pairs_query.current | default([]) | length }}
+          {% for vpc in all_vpc_pairs_query.current | default([]) %}
           
           Domain {{ vpc.nvPairs.DOMAIN_ID | default('N/A') }}:
             Fabric: {{ vpc.nvPairs.FABRIC_NAME | default('N/A') }}
@@ -188,7 +322,7 @@
             Peer 2: {{ vpc.peerTwoId | default('N/A') }}
             PC Mode: {{ vpc.nvPairs.PC_MODE | default('N/A') }}
             Allowed VLANs: {{ vpc.nvPairs.ALLOWED_VLANS | default('N/A') }}
-            Config Mirroring: {{ vpc.nvPairs.ENABLE_MIRROR_CONFIG | default('N/A') }}
+            Keepalive VRF: {{ vpc.nvPairs.KEEP_ALIVE_VRF | default('N/A') }}
           {% endfor %}
           ═══════════════════════════════════════════════════════════════════════
       when: all_vpc_pairs_query is defined
