@@ -99,10 +99,14 @@ switches:
           area: {{ interface.ospf_area }}
           process: {{ interface.ospf_process }}
 {% endif %}
-{% if interface.trunk is defined %}
+{% if interface.trunk is defined and (interface.trunk.allowed_vlans is defined or interface.trunk.native_vlan is defined) %}
         trunk:
+{% if interface.trunk.allowed_vlans is defined %}
           allowed_vlans: {{ interface.trunk.allowed_vlans }}
+{% endif %}
+{% if interface.trunk.native_vlan is defined %}
           native_vlan: {{ interface.trunk.native_vlan }}
+{% endif %}
 {% endif %}
 {% if interface.access is defined %}
         access:

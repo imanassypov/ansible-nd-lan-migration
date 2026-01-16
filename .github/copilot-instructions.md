@@ -1,44 +1,46 @@
 # Copilot Instructions: Ansible DC LAN Migration
 
-## Project Overview
+## Architecture Overview
 
-Ansible automation for migrating Cisco NX-OS switches from CLI-based management to **Nexus Dashboard Fabric Controller (NDFC)**, plus pre-provisioning new access switches via POAP.
+Ansible automation migrating Cisco NX-OS switches from CLI to **Nexus Dashboard Fabric Controller (NDFC)**, plus POAP pre-provisioning for new switches.
 
-## Architecture
-
-### Three Workflows
+### Data Flow (Critical to Understand)
 ```
-playbooks/
-├── discovery/                  # Profile existing switches → generates fabrics/<fabric>/*.yml
-├── provision-fabric/           # Create NDFC fabric definitions
-└── provision-switch/           # Pre-provision + deploy configs (1.0-1.8)
-    └── 0.0-full-provision-switch.yml  # Master orchestration playbook
+1. inventory/hosts.yml                    # Defines switches with fabric, role, add_to_fabric
+2. inventory/host_vars/nexus_dashboard/
+   └── fabric_definitions.yml             # Source of truth: nd_fabrics[], vpc_domains[]
+3. playbooks/discovery/1.0-profile*       # SSH → switches → generates fabrics/<fabric>/*.yml
+4. fabrics/<fabric>/                      # Generated: l2_interfaces.yml, vlan_database.yml, etc.
+5. templates/*.j2                         # Transform YAML → NDFC REST API JSON payloads
+6. playbooks/provision-switch/1.x-*       # Deploy via NDFC httpapi
 ```
 
-### Provisioning Sequence (1.0-1.8)
-Run `0.0-full-provision-switch.yml` for full workflow, or individual playbooks:
-1. **1.0** Pre-provision switches (POAP API) → 2. **1.1** Discovery user → 3. **1.2** Features
-4. **1.3** VPC domain (aggregation only) → 5. **1.4** Interfaces (L2/L3/VPC/SVI)
-6. **1.5** VLAN policies → 7. **1.6** Default route → 8. **1.7** POAP status → 9. **1.8** Bootstrap
+### Workflow Sequence (0.0 runs all)
+| Step | Playbook | Purpose | Target |
+|------|----------|---------|--------|
+| 1.0 | provision-switches | POAP pre-provision or discover existing | NDFC |
+| 1.1 | create-discovery-user | NDFC switch auth user | NDFC |
+| 1.2 | provision-features | NX-OS features via `feature_lookup.yml` | NDFC |
+| 1.3 | deploy-vpc-domain | VPC peer-link (aggregation only) | NDFC |
+| 1.4 | provision-interfaces | L2/L3/VPC/SVI via `dcnm_interface` | NDFC |
+| 1.5 | provision-vlan-policies | VLAN database | NDFC |
+| 1.6 | provision-default-route | Static routes | NDFC |
+| 1.7 | check-poap-status | Query POAP readiness | NDFC |
+| 1.8 | bootstrap-switches | Deploy Day-0 config | NDFC |
 
-### Data Flow
-- **Source of truth**: [inventory/host_vars/nexus_dashboard/fabric_definitions.yml](inventory/host_vars/nexus_dashboard/fabric_definitions.yml) (fabrics + VPC domains)
-- **Generated artifacts**: `fabrics/<fabric>/` (vlan_database.yml, l2_interfaces.yml, etc.) - created by discovery playbook
-- **Templates**: `templates/*.j2` transform variables → NDFC API JSON payloads
+## Connection Patterns (NEVER Mix!)
 
-## Connection Patterns (Critical!)
+| Target | Connection | Collection | `hosts:` value |
+|--------|------------|------------|----------------|
+| NX-OS Switches | `ansible.netcommon.network_cli` | `cisco.nxos` | `switches` |
+| Nexus Dashboard | `ansible.netcommon.httpapi` | `cisco.nd`, `cisco.dcnm` | `nexus_dashboard` |
 
-| Target | Connection | Collection | Credentials |
-|--------|------------|------------|-------------|
-| NX-OS Switches | `network_cli` (SSH) | `cisco.nxos` | `vault_switch_password` |
-| Nexus Dashboard | `httpapi` (REST) | `cisco.nd`, `cisco.dcnm` | `vault_nd_password` |
+Credentials: `vault_switch_password` (switches), `vault_nd_password` (ND) in `inventory/group_vars/all/vault.yml`
 
-**Never mix connection types** - playbooks targeting ND use `hosts: nexus_dashboard`, switches use `hosts: switches`.
-
-## Development Workflow
+## Development Commands
 
 ```bash
-# Setup (uses UV, never pip)
+# Setup (UV only, never pip)
 uv sync && source .venv/bin/activate
 ansible-galaxy collection install -r requirements.yml
 
@@ -46,49 +48,63 @@ ansible-galaxy collection install -r requirements.yml
 echo "password" > .vault_pass
 ansible-vault edit inventory/group_vars/all/vault.yml
 
-# Run provisioning
-ansible-playbook playbooks/provision-switch/0.0-full-provision-switch.yml
+# Run with tags
+ansible-playbook playbooks/provision-switch/1.4-provision-interfaces.yml --tags deploy-vpc-interfaces
+ansible-playbook playbooks/provision-switch/0.0-full-provision-switch.yml -v
 ```
 
-## Key Conventions
+## Key Patterns
 
-### Switch Inventory Structure
-Switches in [inventory/hosts.yml](inventory/hosts.yml) require:
+### Switch Inventory Structure (hosts.yml)
 ```yaml
-mgmt-acc01:
+switch_name:
   ansible_host: 198.18.24.81
-  fabric: mgmt-fabric              # Required: maps to fabric_definitions
-  role: access                     # Required: access|aggregation
+  fabric: mgmt-fabric              # Must match nd_fabrics[].FABRIC_NAME
+  role: access                     # access | aggregation
   add_to_fabric: true              # Include in provisioning
-  destination_switch_sn: ABC123    # NEW switch serial (for POAP)
+  mgmt_int: Vlan199                # Management interface
+  # POAP pre-provision (new switches only):
+  destination_switch_sn: ABC123
+  destination_switch_model: N9K-C9300v
+  destination_switch_version: "10.6(1)"
 ```
 
-### Interface Naming (NDFC format)
-- `port-channel113` → `vpc113` for VPC interfaces
-- `Ethernet1/4` → `e1/4` for member interfaces
-- Feature mapping: `templates/feature_lookup.yml` (NX-OS feature → NDFC template)
-
-### Idempotency Pattern
-All playbooks query NDFC for existing resources before creating - safe to re-run.
-
-## Modules Used
-
-| Module | Purpose | Example Playbook |
-|--------|---------|------------------|
-| `cisco.nd.nd_rest` | Raw ND REST API calls | 1.0-preprovision |
-| `cisco.dcnm.dcnm_vpc_pair` | VPC domain config | 1.3-deploy-vpc-domain |
-| `cisco.dcnm.dcnm_interface` | Interface provisioning | 1.4-provision-interfaces |
-| `cisco.nxos.nxos_facts` | Switch discovery | discovery/1.0-profile |
-
-## Testing
-
-```bash
-ansible-playbook <playbook> --check   # Dry-run
-ansible-playbook <playbook> -v        # Verbose
-ansible-lint playbooks/**/*.yml       # Lint
+### Interface Naming Transforms (templates)
+```jinja2
+{# NX-OS → NDFC dcnm_interface format #}
+port-channel113 → vpc113           {# VPC interfaces #}
+Ethernet1/4 → e1/4                 {# regex_replace('^Ethernet', 'e') #}
 ```
 
-## Pitfalls
-- **Timeouts**: NDFC is slow; `ansible_command_timeout: 1000` in [connection.yml](inventory/group_vars/nd/connection.yml)
-- **Python 3.13+** required per pyproject.toml
-- **Fabric directory**: `fabrics/<fabric>/` created by discovery playbook, not manually
+### Common Task Pattern (filter switches by add_to_fabric)
+```yaml
+- name: Build list of switches to provision
+  set_fact:
+    switches_to_provision: >-
+      {{ groups['switches'] | map('extract', hostvars)
+         | selectattr('add_to_fabric', 'defined')
+         | selectattr('add_to_fabric', 'equalto', true) | list }}
+```
+
+### Template → JSON → API Pattern
+Templates output JSON for `cisco.nd.nd_rest` or structured data for `cisco.dcnm.*` modules:
+- `1.0-preprovision-new-switches.j2` → JSON array for POAP API
+- `1.4-provision-interfaces-*.j2` → config list for `dcnm_interface`
+
+## Modules Reference
+
+| Module | Use Case | State |
+|--------|----------|-------|
+| `cisco.nd.nd_rest` | Raw NDFC REST API (POAP, policies) | — |
+| `cisco.dcnm.dcnm_interface` | Interface config | `replaced` (idempotent) |
+| `cisco.dcnm.dcnm_vpc_pair` | VPC domain config | `merged` |
+| `cisco.nxos.nxos_facts` | Discovery via SSH | — |
+
+## Pitfalls & Notes
+
+- **Timeouts**: NDFC is slow → `ansible_command_timeout: 1000` in `inventory/group_vars/nd/connection.yml`
+- **Python 3.13+** required (pyproject.toml)
+- **Fabric directories**: `fabrics/<fabric>/` created by discovery playbook, never manually
+- **VPC ID 1**: Skipped in templates (reserved for peer-link managed by VPC domain)
+- **Gateway format**: POAP requires prefix length (e.g., `198.18.24.65/26`)
+- **Feature mapping**: `templates/feature_lookup.yml` maps NX-OS features → NDFC template names
