@@ -51,7 +51,7 @@
         use_ssl: "{{ ansible_httpapi_use_ssl }}"
         validate_certs: "{{ ansible_httpapi_validate_certs }}"
         use_proxy: "{{ ansible_httpapi_use_proxy }}"
-        login_domain: "{{ ansible_httpapi_login_domain | default('local') }}"
+        login_domain: "{{ ansible_httpapi_login_domain }}"
         path: /api/v1/manage/fabrics
         method: GET
       register: existing_fabrics
@@ -93,7 +93,7 @@
         use_ssl: "{{ ansible_httpapi_use_ssl }}"
         validate_certs: "{{ ansible_httpapi_validate_certs }}"
         use_proxy: "{{ ansible_httpapi_use_proxy }}"
-        login_domain: "{{ ansible_httpapi_login_domain | default('local') }}"
+        login_domain: "{{ ansible_httpapi_login_domain }}"
         path: /api/v1/manage/fabrics
         method: POST
         content: "{{ lookup('template', '../../templates/02-configure-nd-fabric.j2') }}"

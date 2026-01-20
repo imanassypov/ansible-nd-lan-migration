@@ -233,6 +233,7 @@
         use_ssl: "{{ ansible_httpapi_use_ssl }}"
         validate_certs: "{{ ansible_httpapi_validate_certs }}"
         use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        login_domain: "{{ ansible_httpapi_login_domain }}"
         path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{{ item }}/inventory"
         method: GET
       loop: "{{ preprovision_by_fabric.keys() | list }}"
@@ -296,6 +297,7 @@
         use_ssl: "{{ ansible_httpapi_use_ssl }}"
         validate_certs: "{{ ansible_httpapi_validate_certs }}"
         use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        login_domain: "{{ ansible_httpapi_login_domain }}"
         path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{{ item.key }}/inventory/poap"
         method: POST
         content: "{{ lookup('template', '../../templates/1.0-preprovision-new-switches.j2') }}"
@@ -426,6 +428,7 @@
         use_ssl: "{{ ansible_httpapi_use_ssl }}"
         validate_certs: "{{ ansible_httpapi_validate_certs }}"
         use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        login_domain: "{{ ansible_httpapi_login_domain }}"
         path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{{ item }}/inventory"
         method: GET
       loop: "{{ discovery_by_fabric.keys() | list }}"
@@ -435,6 +438,7 @@
         - discovery_by_fabric is defined
         - discovery_by_fabric | length > 0
       register: existing_managed_query
+      ignore_errors: true
       tags:
         - discover-switches
 
@@ -503,6 +507,7 @@
         use_ssl: "{{ ansible_httpapi_use_ssl }}"
         validate_certs: "{{ ansible_httpapi_validate_certs }}"
         use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        login_domain: "{{ ansible_httpapi_login_domain }}"
         timeout: 300
         path: "/api/v1/manage/fabrics/{{ item.key }}/switches"
         method: POST
@@ -629,6 +634,7 @@
         use_ssl: "{{ ansible_httpapi_use_ssl }}"
         validate_certs: "{{ ansible_httpapi_validate_certs }}"
         use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        login_domain: "{{ ansible_httpapi_login_domain }}"
         path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/switches/roles"
         method: POST
         content: >-

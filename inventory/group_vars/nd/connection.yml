@@ -4,6 +4,7 @@ ansible_connection: ansible.netcommon.httpapi
 ansible_httpapi_use_ssl: true
 ansible_httpapi_validate_certs: false
 ansible_httpapi_use_proxy: false
+ansible_httpapi_login_domain: local
 
 # Login Information
 ansible_user: admin

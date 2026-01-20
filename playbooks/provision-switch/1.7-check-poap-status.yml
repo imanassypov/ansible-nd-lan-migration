@@ -62,6 +62,7 @@
         use_ssl: "{{ ansible_httpapi_use_ssl }}"
         validate_certs: "{{ ansible_httpapi_validate_certs }}"
         use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        login_domain: "{{ ansible_httpapi_login_domain }}"
         path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{{ item }}/inventory/poap"
         method: GET
       loop: "{{ unique_fabrics | default([]) }}"
