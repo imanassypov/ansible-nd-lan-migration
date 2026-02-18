@@ -85,8 +85,8 @@ VPC Settings:
       {% if vpc.mode == 'trunk' %}
         {% set trunk = vpc.trunk | default({}) %}
         {% set _ = vpc_config.profile.update({
-          'peer1_allowed_vlans': trunk.allowed_vlans | default('none'),
-          'peer2_allowed_vlans': trunk.allowed_vlans | default('none'),
+          'peer1_allowed_vlans': trunk.allowed_vlans | default('all'),
+          'peer2_allowed_vlans': trunk.allowed_vlans | default('all'),
           'peer1_native_vlan': trunk.native_vlan | default('') | string,
           'peer2_native_vlan': trunk.native_vlan | default('') | string,
           'peer1_description': vpc.description | default('VPC ' + vpc.vpc_id | string + ' trunk'),

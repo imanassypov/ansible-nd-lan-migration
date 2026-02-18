@@ -67,7 +67,7 @@ Port-channel Settings:
       } %}
       {% if iface.mode == 'trunk' %}
         {% set _ = iface_config.profile.update({
-          'allowed_vlans': iface.trunk.allowed_vlans | default('none'),
+          'allowed_vlans': iface.trunk.allowed_vlans | default('all'),
           'native_vlan': iface.trunk.native_vlan | default('') | string,
           'bpdu_guard': 'false'
         }) %}

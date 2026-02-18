@@ -60,7 +60,7 @@ Port-channel Member Auto-extraction:
           } %}
           {% if pc.mode | default('trunk') == 'trunk' %}
             {% set _ = member_config.profile.update({
-              'allowed_vlans': pc.trunk.allowed_vlans | default('none'),
+              'allowed_vlans': pc.trunk.allowed_vlans | default('all'),
               'native_vlan': pc.trunk.native_vlan | default('') | string
             }) %}
           {% elif pc.mode | default('trunk') == 'access' %}
@@ -89,7 +89,7 @@ Port-channel Member Auto-extraction:
       } %}
       {% if iface.mode == 'trunk' %}
         {% set _ = iface_config.profile.update({
-          'allowed_vlans': iface.trunk.allowed_vlans | default('none'),
+          'allowed_vlans': iface.trunk.allowed_vlans | default('all'),
           'native_vlan': iface.trunk.native_vlan | default('') | string,
           'bpdu_guard': 'true',
           'port_type_fast': true
