@@ -49,14 +49,14 @@ VPC Settings:
       {% set peer1_members = [] %}
       {% set peer2_members = [] %}
       {% if vpc.members is defined %}
-        {% if peer1_name in vpc.members %}
-          {% for member in vpc.members[peer1_name] %}
+        {% if peer1_name in vpc.members and vpc.members[peer1_name] is not none %}
+          {% for member in vpc.members[peer1_name] | default([]) %}
             {% set member_name = member.interface | regex_replace('^Ethernet', 'e') %}
             {% set _ = peer1_members.append(member_name) %}
           {% endfor %}
         {% endif %}
-        {% if peer2_name in vpc.members %}
-          {% for member in vpc.members[peer2_name] %}
+        {% if peer2_name in vpc.members and vpc.members[peer2_name] is not none %}
+          {% for member in vpc.members[peer2_name] | default([]) %}
             {% set member_name = member.interface | regex_replace('^Ethernet', 'e') %}
             {% set _ = peer2_members.append(member_name) %}
           {% endfor %}
@@ -83,11 +83,12 @@ VPC Settings:
         }
       } %}
       {% if vpc.mode == 'trunk' %}
+        {% set trunk = vpc.trunk | default({}) %}
         {% set _ = vpc_config.profile.update({
-          'peer1_allowed_vlans': vpc.trunk.allowed_vlans | default('none'),
-          'peer2_allowed_vlans': vpc.trunk.allowed_vlans | default('none'),
-          'peer1_native_vlan': vpc.trunk.native_vlan | default('') | string,
-          'peer2_native_vlan': vpc.trunk.native_vlan | default('') | string,
+          'peer1_allowed_vlans': trunk.allowed_vlans | default('none'),
+          'peer2_allowed_vlans': trunk.allowed_vlans | default('none'),
+          'peer1_native_vlan': trunk.native_vlan | default('') | string,
+          'peer2_native_vlan': trunk.native_vlan | default('') | string,
           'peer1_description': vpc.description | default('VPC ' + vpc.vpc_id | string + ' trunk'),
           'peer2_description': vpc.description | default('VPC ' + vpc.vpc_id | string + ' trunk'),
           'bpdu_guard': 'false'

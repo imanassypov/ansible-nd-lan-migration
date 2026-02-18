@@ -45,6 +45,12 @@
 
   tasks:
 
+    #--------------------------------------------------------------------------
+    # Pre-flight: Verify NDFC is reachable before any provisioning
+    #--------------------------------------------------------------------------
+    - name: Verify NDFC connectivity
+      ansible.builtin.import_tasks: ../common/ndfc-preflight-check.yml
+
     # ========================================================================
     # Phase 1: Build list of switches to provision
     # ========================================================================
@@ -77,7 +83,7 @@
       loop_control:
         label: "{{ item | dirname | basename }}"
 
-    - name: Build consolidated switch details lookup
+    - name: Build consolidated switch details lookup (keyed by IP)
       ansible.builtin.set_fact:
         switch_details_lookup: |
           {%- set lookup = {} -%}
@@ -85,7 +91,7 @@
             {%- set details = hostvars[inventory_hostname][var_name] -%}
             {%- if details.switches is defined -%}
               {%- for switch in details.switches -%}
-                {%- set _ = lookup.update({switch.hostname: switch}) -%}
+                {%- set _ = lookup.update({switch.ip_address: switch}) -%}
               {%- endfor -%}
             {%- endif -%}
           {%- endfor -%}
@@ -101,8 +107,8 @@
           Discovery username: {{ discovery_username }}
           {% for switch in switches_to_provision %}
           {%- set sn = switch.destination_switch_sn | default('') -%}
-          {%- if not sn and switch.inventory_hostname in switch_details_lookup -%}
-            {%- set sn = switch_details_lookup[switch.inventory_hostname].license_hostid | default('') -%}
+          {%- if not sn and switch.ansible_host in switch_details_lookup -%}
+            {%- set sn = switch_details_lookup[switch.ansible_host].license_hostid | default('') -%}
           {%- endif %}
           - {{ switch.inventory_hostname }} ({{ sn if sn else 'NO SERIAL' }})
           {% endfor %}
@@ -123,9 +129,10 @@
           {%- set configs = [] -%}
           {%- for switch in switches_to_provision -%}
             {%- set hostname = switch.inventory_hostname -%}
+            {%- set ip = switch.ansible_host | default('') -%}
             {%- set serial = switch.destination_switch_sn | default('') -%}
-            {%- if not serial and hostname in switch_details_lookup -%}
-              {%- set serial = switch_details_lookup[hostname].license_hostid | default('') -%}
+            {%- if not serial and ip in switch_details_lookup -%}
+              {%- set serial = switch_details_lookup[ip].license_hostid | default('') -%}
             {%- endif -%}
             {%- if serial -%}
               {%- set config = {

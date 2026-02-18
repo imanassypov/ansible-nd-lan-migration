@@ -93,6 +93,17 @@ switches:
 {% if interface.hsrp_priority is defined %}
           priority: {{ interface.hsrp_priority }}
 {% endif %}
+{% if interface.hsrp_preempt is defined and interface.hsrp_preempt %}
+          preempt: true
+{% endif %}
+{% if interface.hsrp_hello_interval is defined %}
+          timers:
+            hello_interval: {{ interface.hsrp_hello_interval }}
+            hold_time: {{ interface.hsrp_hold_time }}
+{% if interface.hsrp_timers_msec is defined and interface.hsrp_timers_msec %}
+            msec: true
+{% endif %}
+{% endif %}
 {% endif %}
 {% if interface.ospf_area is defined %}
         ospf:

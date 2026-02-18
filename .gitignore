@@ -28,6 +28,7 @@ env/
 .ansible/
 ansible.log
 *.log
+error_logs/
 
 # Ansible Galaxy
 roles/downloaded/
@@ -67,6 +68,9 @@ source_configs/
 # Documentation builds
 docs/_build/
 site/
+
+# CML (Cisco Modeling Labs)
+CML/
 
 # OS files
 Thumbs.db

@@ -49,7 +49,7 @@
 #   - Hostname, IP address, management interface
 #   - Hardware model and serial number
 #   - Software version
-#   - Fabric assignment and role (access, aggregation, core, etc.)
+#   - Fabric assignment
 #   - Migration destination info (if migrating to new hardware)
 #
 # Creates fabric directories for output files
@@ -92,7 +92,6 @@
           target_model: "{{ switch_facts.ansible_facts.ansible_net_platform }}"
           sw_version: "{{ switch_facts.ansible_facts.ansible_net_version }}"
           fabric: "{{ fabric }}"
-          role: "{{ role }}"
           add_to_fabric: "{{ add_to_fabric | default(true) | bool }}"
           destination_switch_sn: "{{ destination_switch_sn | default(omit) }}"
           destination_switch_model: "{{ destination_switch_model | default(omit) }}"
@@ -445,15 +444,61 @@
     #   debug:
     #     var: interface_info
 
-    # Gather HSRP configurations for interfaces with redundancy protocols
-    - name: Get HSRP Information
-      cisco.nxos.nxos_hsrp_interfaces:
-        state: gathered
-      register: hsrp_info
+    # Gather HSRP configurations by parsing running config
+    # The nxos_hsrp_interfaces module only returns BFD settings, not actual HSRP group config
+    - name: Get HSRP running config for all interfaces
+      cisco.nxos.nxos_command:
+        commands:
+          - show running-config | section "^interface Vlan"
+      register: hsrp_running_config
 
-    # - name: Display HSRP Information
-    #   debug:
-    #     var: hsrp_info
+    - name: Display HSRP running config
+      debug:
+        var: hsrp_running_config.stdout[0]
+
+    # Parse HSRP config using regex to extract per-interface blocks
+    - name: Parse HSRP configurations from running config
+      set_fact:
+        hsrp_parsed: >-
+          {%- set ns = namespace(hsrp_configs={}) -%}
+          {%- for block in hsrp_running_config.stdout[0].split('interface ')[1:] -%}
+            {%- set lines = block.split('\n') -%}
+            {%- set iface_name = lines[0].strip() -%}
+            {%- if 'hsrp ' in block -%}
+              {%- set hsrp_data = {} -%}
+              {%- set version_match = block | regex_findall('hsrp version (\d+)') -%}
+              {%- if version_match | length > 0 -%}
+                {%- set _ = hsrp_data.update({'version': version_match[0] | int}) -%}
+              {%- endif -%}
+              {%- set group_match = block | regex_findall('(?m)^\s+hsrp (\d+)\s*$') -%}
+              {%- if group_match | length > 0 -%}
+                {%- set _ = hsrp_data.update({'group': group_match[0] | int}) -%}
+              {%- endif -%}
+              {%- if 'preempt' in block -%}
+                {%- set _ = hsrp_data.update({'preempt': true}) -%}
+              {%- endif -%}
+              {%- set priority_match = block | regex_findall('priority (\d+)') -%}
+              {%- if priority_match | length > 0 -%}
+                {%- set _ = hsrp_data.update({'priority': priority_match[0] | int}) -%}
+              {%- endif -%}
+              {%- set timer_vals = block | regex_findall('timers\s+(\d+)\s+(\d+)') -%}
+              {%- if timer_vals | length > 0 -%}
+                {%- set _ = hsrp_data.update({'hello_interval': timer_vals[0][0] | int, 'hold_time': timer_vals[0][1] | int}) -%}
+              {%- endif -%}
+              {%- set ip_match = block | regex_findall('(?m)^\s+ip (\d+\.\d+\.\d+\.\d+)\s*$') -%}
+              {%- if ip_match | length > 0 -%}
+                {%- set _ = hsrp_data.update({'virtual_ip': ip_match[0]}) -%}
+              {%- endif -%}
+              {%- if hsrp_data -%}
+                {%- set _ = ns.hsrp_configs.update({iface_name: hsrp_data}) -%}
+              {%- endif -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ ns.hsrp_configs }}
+
+    - name: Display parsed HSRP configurations
+      debug:
+        var: hsrp_parsed
     
     # Gather OSPF routing protocol configurations on interfaces
     - name: Gather Any OSPF Configured Interfaces
@@ -476,15 +521,15 @@
           interfaces: |
             {%- set merged_interfaces = [] -%}
             {%- set base_intfs = base_interface_info.gathered | default([]) -%}
+            {%- set hsrp_configs = hsrp_parsed | default({}) -%}
             {%- for l3_iface in interface_info.gathered | default([]) -%}
               {%- set iface_data = l3_iface | dict2items | items2dict -%}
               {%- set base_iface = base_intfs | selectattr('name', 'equalto', l3_iface.name) | list -%}
               {%- if base_iface | length > 0 and base_iface[0].description is defined -%}
                 {%- set _ = iface_data.update({'description': base_iface[0].description}) -%}
               {%- endif -%}
-              {%- set hsrp_data = hsrp_info.gathered | default([]) | selectattr('name', 'equalto', l3_iface.name) | list -%}
-              {%- if hsrp_data | length > 0 and hsrp_data[0].standby is defined and hsrp_data[0].standby_options is defined -%}
-                {%- set _ = iface_data.update({'hsrp': hsrp_data[0]}) -%}
+              {%- if l3_iface.name in hsrp_configs -%}
+                {%- set _ = iface_data.update({'hsrp': hsrp_configs[l3_iface.name]}) -%}
               {%- endif -%}
               {%- set ospf_data = ospf_interfaces_info.gathered | default([]) | selectattr('name', 'equalto', l3_iface.name) | list -%}
               {%- if ospf_data | length > 0 and ospf_data[0].address_family is defined-%}
@@ -561,12 +606,21 @@
                   {% endif %}
                   {% if iface.hsrp is defined %}
                     {% set _ = iface_data.update({
-                      'hsrp_group': iface.hsrp.standby_options[0].group_no | default(''),
-                      'hsrp_version': iface.hsrp.standby.version | default(''),
-                      'hsrp_virtual_ip': iface.hsrp.standby_options[0].ip[0].virtual_ip | default(''),
+                      'hsrp_group': iface.hsrp.group | default(''),
+                      'hsrp_version': iface.hsrp.version | default(2),
+                      'hsrp_virtual_ip': iface.hsrp.virtual_ip | default(''),
                     }) %}
-                    {% if iface.hsrp.standby_options[0].priority is defined %}
-                      {% set _ = iface_data.update({'hsrp_priority': iface.hsrp.standby_options[0].priority.level | default('')}) %}
+                    {% if iface.hsrp.priority is defined %}
+                      {% set _ = iface_data.update({'hsrp_priority': iface.hsrp.priority}) %}
+                    {% endif %}
+                    {% if iface.hsrp.preempt is defined and iface.hsrp.preempt %}
+                      {% set _ = iface_data.update({'hsrp_preempt': true}) %}
+                    {% endif %}
+                    {% if iface.hsrp.hello_interval is defined %}
+                      {% set _ = iface_data.update({
+                        'hsrp_hello_interval': iface.hsrp.hello_interval,
+                        'hsrp_hold_time': iface.hsrp.hold_time | default(''),
+                      }) %}
                     {% endif %}
                   {% endif %}
                   {% if iface.ospf is defined %}

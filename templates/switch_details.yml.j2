@@ -7,7 +7,7 @@
 # Input Variables:
 #   - fabric_name: Name of the fabric
 #   - fabric_switches: List of switch profiles for the fabric
-#     Structure: [{hostname, ip_address, serial_number, model, software_version, role}]
+#     Structure: [{hostname, ip_address, serial_number, model, software_version}]
 #
 # Output: YAML file with switch hardware details organized by hostname
 #
@@ -17,7 +17,6 @@
 #   - License Host ID (used by NDFC for switch identification)
 #   - Hardware model (e.g., N9K-C9300v)
 #   - Software version (e.g., 10.6(1))
-#   - Role (access, aggregation, core, etc.)
 #
 # Use Cases:
 #   - Populate inventory for NDFC switch discovery API
@@ -36,5 +35,4 @@ switches:
     license_hostid: {{ switch.license_hostid }}
     model: {{ switch.target_model }}
     software_version: "{{ switch.sw_version }}"
-    role: {{ switch.role }}
 {% endfor %}

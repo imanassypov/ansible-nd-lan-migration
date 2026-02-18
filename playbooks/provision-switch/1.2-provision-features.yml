@@ -41,6 +41,12 @@
 
   tasks:
 
+    #--------------------------------------------------------------------------
+    # Pre-flight: Verify NDFC is reachable before any provisioning
+    #--------------------------------------------------------------------------
+    - name: Verify NDFC connectivity
+      ansible.builtin.import_tasks: ../common/ndfc-preflight-check.yml
+
     # Build list of switches to provision features
     - name: Build list of switches to provision
       ansible.builtin.set_fact:

@@ -25,6 +25,13 @@ Supported Modes:
   - access: Single VLAN access port with BPDU guard
   - trunk: Multiple VLANs with native VLAN and BPDU guard
 
+Port-channel Member Auto-extraction:
+  Member interfaces defined inside port-channel (type: pc) definitions are
+  automatically extracted and provisioned as trunk Ethernet interfaces.
+  This ensures member ports exist in NDFC before the port-channel references them.
+  Discovery excludes members from standalone eth list to avoid duplication,
+  so this template re-creates them from the port-channel member definitions.
+
 ================================================================================
 #}
 {% set config = [] %}
@@ -32,6 +39,40 @@ Supported Modes:
   {% set switch_name = switch.inventory_hostname %}
   {% if switch_name in l2_interfaces_lookup %}
     {% set switch_ip = hostvars[switch_name]['ansible_host'] %}
+    {# --- Auto-extract port-channel member interfaces --- #}
+    {% set pc_interfaces = l2_interfaces_lookup[switch_name].interfaces | selectattr('type', 'equalto', 'pc') | list %}
+    {% for pc in pc_interfaces %}
+      {% if pc.members is defined %}
+        {% for member in pc.members %}
+          {% set member_iface_name = member.interface | regex_replace('^Ethernet', 'eth') %}
+          {% set member_config = {
+            'name': member_iface_name,
+            'type': 'eth',
+            'switch': [switch_ip],
+            'deploy': false,
+            'profile': {
+              'admin_state': true,
+              'mode': pc.mode | default('trunk'),
+              'bpdu_guard': 'true',
+              'port_type_fast': true,
+              'description': (pc.description | default('')) ~ ' member'
+            }
+          } %}
+          {% if pc.mode | default('trunk') == 'trunk' %}
+            {% set _ = member_config.profile.update({
+              'allowed_vlans': pc.trunk.allowed_vlans | default('none'),
+              'native_vlan': pc.trunk.native_vlan | default('') | string
+            }) %}
+          {% elif pc.mode | default('trunk') == 'access' %}
+            {% set _ = member_config.profile.update({
+              'access_vlan': pc.access.vlan | default('') | string
+            }) %}
+          {% endif %}
+          {% set _ = config.append(member_config) %}
+        {% endfor %}
+      {% endif %}
+    {% endfor %}
+    {# --- Standard Ethernet interfaces --- #}
     {% set eth_interfaces = l2_interfaces_lookup[switch_name].interfaces | selectattr('type', 'equalto', 'eth') | list %}
     {% for iface in eth_interfaces %}
       {% set iface_name = iface.name | regex_replace('^Ethernet', 'eth') %}

@@ -42,6 +42,12 @@
 
   tasks:
 
+    #--------------------------------------------------------------------------
+    # Pre-flight: Verify NDFC is reachable before any provisioning
+    #--------------------------------------------------------------------------
+    - name: Verify NDFC connectivity
+      ansible.builtin.import_tasks: ../common/ndfc-preflight-check.yml
+
     # Task 1: Query ND for existing fabrics to prevent duplicate creation
     - name: Get Currently Configured Fabrics
       cisco.nd.nd_rest:

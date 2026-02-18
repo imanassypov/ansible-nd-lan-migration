@@ -1,0 +1,39 @@
+---
+#==============================================================================
+# Shared Task: NDFC Pre-flight Liveness Check
+#==============================================================================
+# Purpose: Verify NDFC is reachable and authenticated before provisioning.
+#          Import this at the top of any playbook that targets nexus_dashboard.
+#
+# Usage:
+#   tasks:
+#     - name: Verify NDFC connectivity
+#       ansible.builtin.import_tasks: ../common/ndfc-preflight-check.yml
+#
+# What it checks:
+#   - httpapi authentication (login domain, credentials)
+#   - NDFC application health via /control/fabrics endpoint
+#   - Retries 3 times with 10s delay to handle transient failures
+#==============================================================================
+
+- name: "Pre-flight: Verify NDFC is reachable"
+  cisco.nd.nd_rest:
+    host: "{{ ansible_host }}"
+    username: "{{ ansible_user }}"
+    password: "{{ ansible_ssh_pass }}"
+    use_ssl: "{{ ansible_httpapi_use_ssl }}"
+    validate_certs: "{{ ansible_httpapi_validate_certs }}"
+    use_proxy: "{{ ansible_httpapi_use_proxy }}"
+    login_domain: "{{ ansible_httpapi_login_domain }}"
+    path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics"
+    method: GET
+  register: ndfc_health_check
+  retries: 3
+  delay: 10
+  until: ndfc_health_check is not failed
+
+- name: "Pre-flight: Display NDFC connection status"
+  ansible.builtin.debug:
+    msg: >-
+      NDFC is reachable at {{ ansible_host }}.
+      Fabrics found: {{ ndfc_health_check.current | default([]) | map(attribute='fabricName') | list | join(', ') }}

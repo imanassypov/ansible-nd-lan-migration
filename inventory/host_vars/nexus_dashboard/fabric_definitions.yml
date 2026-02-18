@@ -2,14 +2,14 @@
 nd_fabrics:
   - FABRIC_NAME: mgmt-fabric
     FABRIC_TYPE: classicLan
-    IS_READ_ONLY: true
+    IS_READ_ONLY: false
     PM_ENABLE: true
     INBAND_MGMT: true
     BOOTSTRAP_ENABLE: true
     DHCP_ENABLE: true
     DHCP_START: 198.18.24.100
     DHCP_END: 198.18.24.110
-    ENABLE_NXAPI: true
+    ENABLE_NXAPI: false
     INBAND_ENABLE: true
     MGMT_GW: 198.18.24.65
     MGMT_PREFIX: 26
@@ -26,14 +26,14 @@ vpc_domains:
     PEER1_PCID: 100
     PEER1_PC_DESCRIPTION: "VPC Peer-Channel on agg01"
     PEER1_MEMBER_INTERFACES:
-      - Ethernet1/1
-      - Ethernet1/2
+      - Ethernet1/47
+      - Ethernet1/48
     PEER2_KEEPALIVE_IP: 198.18.23.54
     PEER2_PCID: 100
     PEER2_PC_DESCRIPTION: "VPC Peer-Channel on agg02"
     PEER2_MEMBER_INTERFACES:
-      - Ethernet1/1
-      - Ethernet1/2
+      - Ethernet1/47
+      - Ethernet1/8
     ALLOWED_VLANS: "2,100-106,109-110,115,120,127-128,199,999"
     PEER1_NATIVE_VLAN: 2
     PEER2_NATIVE_VLAN: 2

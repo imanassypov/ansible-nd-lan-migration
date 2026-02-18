@@ -1,0 +1,142 @@
+{#
+================================================================================
+Template: SVI Interface Configuration for NDFC REST API (with HSRP Support)
+================================================================================
+Purpose:
+  Generate SVI (VLAN interface) configuration payloads for the NDFC REST API
+  globalInterface/pti endpoint. Supports full HSRP configuration including
+  timers, priority, preempt, and version settings.
+
+API Endpoint:
+  POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/globalInterface/pti?isMultiEdit=false
+
+Input Variables:
+  switches_to_provision    - List of switches with add_to_fabric: true
+  l3_interfaces_lookup     - L3 interface data per switch (from l3_interfaces.yml)
+  switch_details_lookup    - Switch serial numbers keyed by IP (from switch_details.yml)
+
+Data Structure (l3_interfaces.yml):
+  switches:
+    <hostname>:
+      interfaces:
+        - name: Vlan199
+          type: svi
+          mode: vlan
+          enabled: True
+          ipv4_address: 198.18.24.66/26
+          ipv4_redirects: False
+          description: "Management_VLAN"
+          dhcp_relay:
+            - 198.18.4.233
+          hsrp:
+            group: 199
+            version: 2
+            virtual_ip: 198.18.24.65
+            priority: 110
+            timers:
+              hello_interval: 1
+              hold_time: 3
+              msec: false
+          ospf:
+            area: 0.0.0.1
+            process: EDGE
+
+Output:
+  List of SVI interface REST API payloads for nd_rest module
+
+================================================================================
+#}
+{% set payloads = [] %}
+{% for switch in switches_to_provision %}
+  {% set hostname = switch.inventory_hostname %}
+  {% set switch_ip = switch.ansible_host %}
+  {% set fabric_name = switch.fabric %}
+  {% if hostname in l3_interfaces_lookup %}
+    {% set switch_data = l3_interfaces_lookup[hostname] %}
+    {# Get serial number from switch_details_lookup (keyed by IP) #}
+    {% set serial_number = switch_details_lookup[switch_ip].serial_number | default('') %}
+    {% for iface in switch_data.interfaces | default([]) %}
+      {% if iface.type == 'svi' and iface.ipv4_address is defined %}
+        {% set ip_parts = iface.ipv4_address.split('/') %}
+        {% set ip_addr = ip_parts[0] %}
+        {% set prefix_len = ip_parts[1] | default('24') %}
+        {# Extract VLAN ID from interface name (e.g., Vlan199 -> 199) #}
+        {% set vlan_id = iface.name | regex_replace('^[Vv]lan', '') %}
+        {# Build freeform CONF section for OSPF, DHCP relay, and HSRP timers #}
+        {% set conf_lines = [] %}
+        {% if iface.ospf is defined %}
+          {% set _ = conf_lines.append('  ip router ospf ' ~ iface.ospf.process ~ ' area ' ~ iface.ospf.area) %}
+        {% endif %}
+        {% if iface.dhcp_relay is defined %}
+          {% for dhcp_server in iface.dhcp_relay %}
+            {% set _ = conf_lines.append('  ip dhcp relay address ' ~ dhcp_server) %}
+          {% endfor %}
+        {% endif %}
+        {# HSRP timers go in freeform CONF since NDFC doesn't have dedicated fields #}
+        {% if iface.hsrp is defined and iface.hsrp.timers is defined %}
+          {% set timer_hello = iface.hsrp.timers.hello_interval | default(3) %}
+          {% set timer_hold = iface.hsrp.timers.hold_time | default(10) %}
+          {% if iface.hsrp.timers.msec | default(false) %}
+            {% set _ = conf_lines.append('  hsrp ' ~ iface.hsrp.group) %}
+            {% set _ = conf_lines.append('    timers msec ' ~ timer_hello ~ ' msec ' ~ timer_hold) %}
+          {% else %}
+            {% set _ = conf_lines.append('  hsrp ' ~ iface.hsrp.group) %}
+            {% set _ = conf_lines.append('    timers ' ~ timer_hello ~ ' ' ~ timer_hold) %}
+          {% endif %}
+        {% endif %}
+        {% set conf_str = conf_lines | join('\n') %}
+        {# Build nvPairs for the SVI #}
+        {% set nv_pairs = {
+          'INTF_VRF': iface.vrf | default(''),
+          'IP': ip_addr,
+          'PREFIX': prefix_len,
+          'IPv6': '',
+          'PREFIXv6': '',
+          'MTU': iface.mtu | default('') | string,
+          'ROUTING_TAG': '',
+          'DESC': iface.description | default(''),
+          'DISABLE_IP_REDIRECTS': 'true' if not (iface.ipv4_redirects | default(false)) else 'false',
+          'ENABLE_PIM_SPARSE': 'false',
+          'PIM_DR_PRIORITY': '1',
+          'CONF': conf_str,
+          'ADMIN_STATE': 'true' if iface.enabled | default(true) else 'false',
+          'ENABLE_HSRP': 'true' if iface.hsrp is defined else 'false',
+          'HSRP_VIP': iface.hsrp.virtual_ip | default('') if iface.hsrp is defined else '',
+          'HSRP_VIPv6': '',
+          'HSRP_GROUP': iface.hsrp.group | default('') | string if iface.hsrp is defined else '',
+          'HSRP_GROUPv6': '',
+          'HSRP_VERSION': iface.hsrp.version | default('2') | string if iface.hsrp is defined else '2',
+          'HSRP_PRIORITY': iface.hsrp.priority | default('') | string if iface.hsrp is defined else '',
+          'PREEMPT': 'true' if (iface.hsrp is defined and iface.hsrp.preempt | default(false)) else 'false',
+          'MAC': '',
+          'dhcpServerAddr1': iface.dhcp_relay[0] | default('') if iface.dhcp_relay is defined else '',
+          'vrfDhcp1': '',
+          'dhcpServerAddr2': iface.dhcp_relay[1] | default('') if iface.dhcp_relay is defined and iface.dhcp_relay | length > 1 else '',
+          'vrfDhcp2': '',
+          'dhcpServerAddr3': iface.dhcp_relay[2] | default('') if iface.dhcp_relay is defined and iface.dhcp_relay | length > 2 else '',
+          'vrfDhcp3': '',
+          'advSubnetInUnderlay': 'false',
+          'ENABLE_NETFLOW': 'false',
+          'NETFLOW_MONITOR': '',
+          'NETFLOW_SAMPLER': '',
+          'INTF_NAME': iface.name
+        } %}
+        {% set interface_payload = {
+          'serialNumber': serial_number,
+          'fabricName': fabric_name,
+          'ifName': iface.name,
+          'interfaceType': 'INTERFACE_VLAN',
+          'nvPairs': nv_pairs
+        } %}
+        {% set payload = {
+          'policy': 'int_vlan',
+          'interfaces': [interface_payload],
+          'hostname': hostname,
+          'has_hsrp': true if iface.hsrp is defined else false
+        } %}
+        {% set _ = payloads.append(payload) %}
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+{% endfor %}
+{{ payloads | to_json }}

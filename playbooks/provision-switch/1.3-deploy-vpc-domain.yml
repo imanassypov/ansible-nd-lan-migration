@@ -42,6 +42,12 @@
 
   tasks:
 
+    #--------------------------------------------------------------------------
+    # Pre-flight: Verify NDFC is reachable before any provisioning
+    #--------------------------------------------------------------------------
+    - name: Verify NDFC connectivity
+      ansible.builtin.import_tasks: ../common/ndfc-preflight-check.yml
+
     # ========================================================================
     # Phase 1: Early exit check
     # ========================================================================
@@ -70,7 +76,7 @@
         label: "{{ item }}"
       register: fabric_switches_query
 
-    - name: Build switch lookup by fabric and hostname
+    - name: Build switch lookup by fabric and IP address
       ansible.builtin.set_fact:
         switch_lookup: |
           {%- set lookup = {} -%}
@@ -81,7 +87,9 @@
             {%- endif -%}
             {%- if result.current is defined and result.current.switches is defined -%}
               {%- for switch in result.current.switches -%}
-                {%- set _ = lookup[fabric].update({switch.hostname: {'serial': switch.serialNumber, 'ip': switch.fabricManagementIp}}) -%}
+                {%- if switch.fabricManagementIp is defined -%}
+                  {%- set _ = lookup[fabric].update({switch.fabricManagementIp: {'serial': switch.serialNumber, 'ip': switch.fabricManagementIp, 'hostname': switch.hostname | default('')}}) -%}
+                {%- endif -%}
               {%- endfor -%}
             {%- endif -%}
           {%- endfor -%}
@@ -99,9 +107,12 @@
             {%- set fabric = domain.FABRIC_NAME -%}
             {%- if fabric in switch_lookup -%}
               {%- set fabric_switches = switch_lookup[fabric] -%}
-              {%- if domain.PEER1_NAME in fabric_switches and domain.PEER2_NAME in fabric_switches -%}
-                {%- set peer1_info = fabric_switches[domain.PEER1_NAME] -%}
-                {%- set peer2_info = fabric_switches[domain.PEER2_NAME] -%}
+              {# Resolve inventory hostnames to IP addresses via hostvars #}
+              {%- set peer1_ip = hostvars[domain.PEER1_NAME]['ansible_host'] | default('') if domain.PEER1_NAME in hostvars else '' -%}
+              {%- set peer2_ip = hostvars[domain.PEER2_NAME]['ansible_host'] | default('') if domain.PEER2_NAME in hostvars else '' -%}
+              {%- if peer1_ip in fabric_switches and peer2_ip in fabric_switches -%}
+                {%- set peer1_info = fabric_switches[peer1_ip] -%}
+                {%- set peer2_info = fabric_switches[peer2_ip] -%}
                 {%- set updated = domain | combine({
                   'PEER1_IP': peer1_info.ip,
                   'PEER2_IP': peer2_info.ip,
@@ -270,17 +281,17 @@
         validate_certs: "{{ ansible_httpapi_validate_certs }}"
         use_proxy: "{{ ansible_httpapi_use_proxy }}"
         login_domain: "{{ ansible_httpapi_login_domain }}"
-        path: "{{ vpc_api_path }}/deploy"
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{{ item.FABRIC_NAME }}/config-deploy"
         method: POST
         content: |
           {
-            "peerOneId": "{{ item.PEER1_SERIAL }}",
-            "peerTwoId": "{{ item.PEER2_SERIAL }}"
+            "switches": ["{{ item.PEER1_SERIAL }}", "{{ item.PEER2_SERIAL }}"]
           }
       loop: "{{ vpc_domains_to_create | default([]) }}"
       loop_control:
         label: "Deploy Domain {{ item.DOMAIN_ID }}"
       register: vpc_deploy_results
+      ignore_errors: true
       when: vpc_domains_to_create | default([]) | length > 0
 
     - name: Display VPC deployment results

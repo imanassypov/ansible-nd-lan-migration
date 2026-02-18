@@ -7,19 +7,48 @@ Automated migration tooling for Cisco NX-OS switches from CLI-based management t
 
 ## Overview
 
-This project implements two main workflows:
+This project implements two NDFC onboarding workflows, automatically selected per-switch based on inventory configuration:
 
-### Migration Workflow (Existing Switches)
-Sequential playbooks to migrate existing CLI-managed switches to NDFC:
-1. **Discovery** → Extract configurations from switches
-2. **Provision Fabric** → Create fabric definitions in NDFC
-3. **Deploy** → Configure VLANs, VPC, and interfaces
+### Pre-provision + Bootstrap Workflow (New / Greenfield Switches)
 
-### Pre-Provisioning Workflow (New Switches)
-Configure new access switches in NDFC before physical deployment:
-1. **Pre-provision** → Register switch with serial number
-2. **Configure** → Features, interfaces, VLANs, routes
-3. **Bootstrap** → Deploy configuration via POAP
+For switches **not yet powered on**, identified by having `destination_switch_sn`, `destination_switch_model`, and `destination_switch_version` defined in `inventory/hosts.yml`. This is a two-stage POAP-based pipeline:
+
+| Stage | Playbook | What Happens |
+|-------|----------|--------------|
+| **Pre-provision** | `1.0-provision-switches.yml` (tag: `preprovision-switches`) | Registers the switch serial number, model, IP, role, and gateway with NDFC via `POST .../inventory/poap` — creating a placeholder *before* the switch boots. |
+| **Configure** | `1.1` – `1.6` | Provisions features, VPC domains, interfaces, VLANs, and default routes in NDFC so policies are ready ahead of time. |
+| **Wait for POAP** | `1.7-check-poap-status.yml` | Polls the POAP inventory to confirm the physical switch has booted and contacted NDFC. |
+| **Bootstrap** | `1.8-bootstrap-switches.yml` | Re-POSTs to the POAP API with `"reAdd": true`, pushing the switch's SSH fingerprint, public key, and Day-0 CLI config (port-channels, member interfaces) to complete onboarding. |
+
+### Discovery Workflow (Existing / Brownfield Switches)
+
+For switches **already online and reachable via SSH**, identified by the *absence* of `destination_switch_sn` in inventory:
+
+| Stage | Playbook | What Happens |
+|-------|----------|--------------|
+| **Profile** | `discovery/1.0-profile-existing-switches.yml` | SSHes into each switch to extract running configs into `fabrics/<fabric>/*.yml`. |
+| **Discover** | `1.0-provision-switches.yml` (tag: `discover-switches`) | Imports the switch into NDFC via `POST /api/v1/manage/fabrics/{fabric}/switches` using SSH credentials with `preserveConfig: true`. |
+| **Assign Role** | Same playbook, post-discovery | Sets each switch's role (access, aggregation) via `POST .../switches/roles`. |
+| **Configure** | `1.1` – `1.6` | Applies the same feature, interface, VLAN, and routing policies as the greenfield path. |
+
+### How the Decision Is Made
+
+The routing logic lives in `1.0-provision-switches.yml`. A single filter splits `switches_to_preprovision` into two lists:
+
+```
+inventory/hosts.yml switch entry
+        │
+        ├─ destination_switch_sn defined? ──► YES ──► POAP Pre-provision → Bootstrap
+        │
+        └─ not defined? ───────────────────► NO  ──► SSH Discovery → Role Assignment
+```
+
+| Switch Type | Inventory Markers | Onboarding Path | Key Playbooks |
+|---|---|---|---|
+| **New (greenfield)** | `destination_switch_sn`, `destination_switch_model`, `destination_switch_version` | Pre-provision → 1.1–1.6 → POAP check → Bootstrap | `1.0` → `1.7` → `1.8` |
+| **Existing (brownfield)** | No serial number fields | Discovery (SSH import) → Role assignment → 1.1–1.6 | `1.0` (discover) → `1.1`–`1.6` |
+
+> **Note:** This deployment assumes **inband switch management**, which requires **Nexus Dashboard 4.1.1** or later. Switches must be reachable from Nexus Dashboard to their respective loopback management addresses for discovery.
 
 ---
 
@@ -139,7 +168,7 @@ The `1.0-provision-switches.yml` playbook automatically determines how to add ea
 │                                                                             │
 │   Example:                          Example:                                │
 │   ┌─────────────────────────────┐   ┌─────────────────────────────┐        │
-│   │ SCCMG02LF13:                │   │ agg01:                      │        │
+│   │ leaf01:                     │   │ agg01:                      │        │
 │   │   ansible_host: 198.18.24.82│   │   ansible_host: 198.18.24.66│        │
 │   │   role: access              │   │   role: aggregation         │        │
 │   │   destination_switch_sn:    │   │   add_to_fabric: true       │        │
@@ -273,7 +302,7 @@ When migrating to a **new physical switch** via POAP (Power On Auto Provisioning
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `destination_switch_sn` | **Yes** | Serial number of the new switch hardware. Found on the switch chassis label or via `show inventory` on an existing switch. NDFC uses this to uniquely identify and match the switch when it boots and contacts NDFC via POAP. |
+| `destination_switch_sn` | **Yes** | Serial number of the new switch hardware. On **Nexus 9000v** (virtual), use `show license host-id` to obtain the correct serial — this is the value NDFC matches during POAP. On **physical** switches, use `show inventory` or the chassis label. NDFC uses this to uniquely identify and match the switch when it boots and contacts NDFC via POAP. |
 | `destination_switch_model` | **Yes** | Hardware model of the new switch (e.g., `N9K-C9348GC-FX3`, `N9K-C93180YC-FX`). Must match the actual hardware model exactly. NDFC validates this against the switch hardware during POAP bootstrap. |
 | `destination_switch_version` | **Yes** | Target NX-OS software version the switch will run (e.g., `10.6(1)`, `10.4(3)`). Used by NDFC to validate switch compatibility and optionally apply image policies during bootstrap. |
 
@@ -415,6 +444,39 @@ After applying, POAP switches should converge STP with one uplink as `Root FWD` 
 
 ---
 
+## POAP MTU Requirements
+
+> **⚠️ Important**: The native VLAN used for POAP (configured with DHCP helper) **must** have a default MTU of **1500 bytes**.
+
+### Issue
+
+POAP bootstrapping may fail if the native VLAN on aggregation switch uplinks is configured with jumbo MTU (e.g., 9216). During POAP, the new switch boots with default MTU settings (1500) and cannot properly communicate with the DHCP server or NDFC if there is an MTU mismatch on the path.
+
+### Symptoms
+
+- POAP switch fails to obtain DHCP lease
+- POAP script download fails or times out
+- Intermittent connectivity during bootstrap phase
+- Large packets (configuration payloads) fail while small packets (ICMP ping) succeed
+
+### Resolution
+
+Ensure the native VLAN SVI on aggregation switches uses default MTU:
+
+```cisco
+interface Vlan199
+  description POAP Native VLAN - DHCP Helper
+  ip address 198.18.24.65/26
+  ip dhcp relay address <dhcp-server-ip>
+  no ip redirects
+  ! Do NOT configure jumbo MTU on this VLAN
+  ! MTU must remain at default 1500 for POAP compatibility
+```
+
+> **Note**: Jumbo MTU (9216) is appropriate for data VLANs carrying production traffic, but the POAP/management native VLAN should always use standard 1500 MTU to ensure compatibility with switches during initial bootstrap.
+
+---
+
 ## Troubleshooting
 
 ### Common Commands
@@ -446,6 +508,31 @@ cat fabrics/mgmt-fabric/switch_features.yml
 ```bash
 ansible-vault view inventory/group_vars/all/vault.yml
 ```
+
+---
+
+## Caveats & Known Issues
+
+### POAP Failure on Certain NX-OS Versions (CSCwm11715)
+
+A known Cisco defect ([CSCwm11715](https://bst.cloudapps.cisco.com/bugsearch/bug/CSCwm11715)) prevents POAP from completing successfully on affected NX-OS releases. Switches hit by this bug will contact NDFC during POAP but fail to finish the bootstrap process — they may loop indefinitely or remain stuck in a pre-provisioned state.
+
+**Impact on this project**: The pre-provision + bootstrap workflow (`1.0` → `1.7` → `1.8`) will fail at the bootstrap stage for switches running an affected NX-OS version. The `1.7-check-poap-status.yml` playbook may show the switch as connected, but `1.8-bootstrap-switches.yml` will not complete successfully.
+
+**Workaround**: Upgrade or downgrade the target switch to a NX-OS version that includes the fix for CSCwm11715 before attempting POAP onboarding. Verify the fixed-in version on the [bug details page](https://bst.cloudapps.cisco.com/bugsearch/bug/CSCwm11715). Ensure the `destination_switch_version` in `inventory/hosts.yml` matches the patched image loaded on the switch.
+
+### DHCP Relay Must Point to Nexus Dashboard Permanent IPs for POAP
+
+> **Important**: When configuring DHCP relay on the aggregation/upstream switch for POAP, the relay destination **must** be the permanent (data) IP addresses of the individual Nexus Dashboard nodes — not the cluster virtual IP (VIP) or management IP. NDFC's built-in DHCP server for POAP listens on the node-level permanent IPs. If the relay points to the cluster VIP, POAP DHCP requests will not receive a response and new switches will fail to bootstrap.
+>
+> On the aggregation switch (or layer 3 gateway for the POAP VLAN):
+> ```
+> interface Vlan199
+>   ip dhcp relay address <ND-node-1-permanent-IP>
+>   ip dhcp relay address <ND-node-2-permanent-IP>
+>   ip dhcp relay address <ND-node-3-permanent-IP>
+> ```
+> Verify the permanent IPs in the Nexus Dashboard UI under **Admin Console → Infrastructure → Cluster Configuration**.
 
 ---
 
