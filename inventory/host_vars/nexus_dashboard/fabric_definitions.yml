@@ -33,7 +33,7 @@ vpc_domains:
     PEER2_PC_DESCRIPTION: "VPC Peer-Channel on agg02"
     PEER2_MEMBER_INTERFACES:
       - Ethernet1/47
-      - Ethernet1/8
+      - Ethernet1/48
     ALLOWED_VLANS: "2,100-106,109-110,115,120,127-128,199,999"
     PEER1_NATIVE_VLAN: 2
     PEER2_NATIVE_VLAN: 2

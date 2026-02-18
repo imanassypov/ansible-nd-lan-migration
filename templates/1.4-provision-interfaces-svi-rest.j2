@@ -53,8 +53,10 @@ Output:
   {% set fabric_name = switch.fabric %}
   {% if hostname in l3_interfaces_lookup %}
     {% set switch_data = l3_interfaces_lookup[hostname] %}
-    {# Get serial number from switch_details_lookup (keyed by IP) #}
-    {% set serial_number = switch_details_lookup[switch_ip].serial_number | default('') %}
+    {# Serial number logic: use destination_switch_sn from hosts.yml
+       - For Discovery switches: destination_switch_sn == switch_details serial (same value)
+       - For POAP switches: destination_switch_sn is the pre-provisioned serial NDFC knows #}
+    {% set serial_number = switch.destination_switch_sn | default(switch_details_lookup[switch_ip].serial_number | default('')) %}
     {% for iface in switch_data.interfaces | default([]) %}
       {% if iface.type == 'svi' and iface.ipv4_address is defined %}
         {% set ip_parts = iface.ipv4_address.split('/') %}
