@@ -1,0 +1,199 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww26140\viewh12360\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 ((venv-ansible) ) VQJ1QYFRFP:ansible-dc-lan-migration 183791730$ \
+((venv-ansible) ) VQJ1QYFRFP:ansible-dc-lan-migration 183791730$ ansible-playbook playbooks/provision-switch/1.4-provision-interfaces.yml \
+/Users/183791730/GITREPOS/dns0-river-ansible-lessons/venv-ansible/lib/python3.12/site-packages/paramiko/pkey.py:100: CryptographyDeprecationWarning: TripleDES has been moved to cryptography.hazmat.decrepit.ciphers.algorithms.TripleDES and will be removed from cryptography.hazmat.primitives.ciphers.algorithms in 48.0.0.\
+  "cipher": algorithms.TripleDES,\
+/Users/183791730/GITREPOS/dns0-river-ansible-lessons/venv-ansible/lib/python3.12/site-packages/paramiko/transport.py:259: CryptographyDeprecationWarning: TripleDES has been moved to cryptography.hazmat.decrepit.ciphers.algorithms.TripleDES and will be removed from cryptography.hazmat.primitives.ciphers.algorithms in 48.0.0.\
+  "class": algorithms.TripleDES,\
+[DEPRECATION WARNING]: community.general.yaml has been deprecated. The plugin has been superseded by the the option `result_format=yaml` in callback plugin ansible.builtin.default from ansible-core 2.13 onwards. This feature will be removed from community.general in \
+version 13.0.0. Deprecation warnings can be disabled by setting deprecation_warnings=False in ansible.cfg.\
+\
+PLAY [Configure Layer 2 Interfaces in NDFC] ***********************************************************************************************************************************************************************************************************************************\
+\
+TASK [Pre-flight: Verify NDFC is reachable] ***********************************************************************************************************************************************************************************************************************************\
+ok: [nexus_dashboard]\
+\
+TASK [Pre-flight: Display NDFC connection status] *****************************************************************************************************************************************************************************************************************************\
+ok: [nexus_dashboard] => \
+  msg: 'NDFC is reachable at el-cagcc00-01vnd01.devfg.rbc.com. Fabrics found: CORE, test_aylin, SB2SF02, mgmt-fabric, STABLE_CORES, SB1SF01, EL-CAGCC00-01MN-Lab-Mgmt-Fabric, SB2SF01LF03_Test, SB2SF01'\
+\
+TASK [Build list of switches to provision] ************************************************************************************************************************************************************************************************************************************\
+ok: [nexus_dashboard]\
+\
+TASK [Display switches to provision] ******************************************************************************************************************************************************************************************************************************************\
+ok: [nexus_dashboard] => \
+  msg: 'Provisioning 3 switch(es): [''agg01'', ''agg02'', ''EL-CAGCC00-01MNL10'']'\
+\
+TASK [Find all l2_interfaces.yml files] ***************************************************************************************************************************************************************************************************************************************\
+ok: [nexus_dashboard]\
+\
+TASK [Load L2 interfaces data from all fabrics] *******************************************************************************************************************************************************************************************************************************\
+ok: [nexus_dashboard] => (item=mgmt-fabric)\
+\
+TASK [Build consolidated L2 interfaces lookup] ********************************************************************************************************************************************************************************************************************************\
+ok: [nexus_dashboard]\
+\
+TASK [Build Ethernet interface configuration from template] *******************************************************************************************************************************************************************************************************************\
+ok: [nexus_dashboard]\
+\
+TASK [Separate Ethernet interfaces by switch role (aggregation vs access/POAP)] ***********************************************************************************************************************************************************************************************\
+ok: [nexus_dashboard]\
+\
+TASK [Display Ethernet interfaces to configure] *******************************************************************************************************************************************************************************************************************************\
+ok: [nexus_dashboard] => \
+  msg: |-\
+    Configuring 36 Ethernet interface(s):\
+    - Aggregation switches: 0\
+    - Access/POAP switches: 36\
+\
+TASK [Configure Ethernet interfaces on aggregation switches via dcnm_interface] ***********************************************************************************************************************************************************************************************\
+skipping: [nexus_dashboard]\
+\
+TASK [Display Ethernet interface deployment result (aggregation)] *************************************************************************************************************************************************************************************************************\
+ok: [nexus_dashboard] => \
+  msg: |-\
+    Aggregation Ethernet Interface Deployment Result:\
+    - Changed: False\
+    - Response: 0 operation(s)\
+\
+TASK [Configure Ethernet interfaces on access/POAP switches via dcnm_interface] ***********************************************************************************************************************************************************************************************\
+changed: [nexus_dashboard]\
+\
+TASK [Display Ethernet interface deployment result (access/POAP)] *************************************************************************************************************************************************************************************************************\
+ok: [nexus_dashboard] => \
+  msg: |-\
+    Access/POAP Ethernet Interface Deployment Result:\
+    - Changed: True\
+    - Response: 2 operation(s)\
+    - Note: Deployment check skipped for POAP switches - policies will deploy after bootstrap\
+\
+TASK [Build Port-channel interface configuration from template] ***************************************************************************************************************************************************************************************************************\
+ok: [nexus_dashboard]\
+\
+TASK [Separate Port-channel interfaces by switch role (aggregation vs access/POAP)] *******************************************************************************************************************************************************************************************\
+ok: [nexus_dashboard]\
+\
+TASK [Display Port-channel interfaces to configure] ***************************************************************************************************************************************************************************************************************************\
+ok: [nexus_dashboard] => \
+  msg: |-\
+    Configuring 1 Port-channel interface(s):\
+    - Aggregation switches: 0\
+    - Access/POAP switches: 1\
+\
+TASK [Configure Port-channel interfaces on aggregation switches via dcnm_interface] *******************************************************************************************************************************************************************************************\
+skipping: [nexus_dashboard]\
+\
+TASK [Display Port-channel interface deployment result (aggregation)] *********************************************************************************************************************************************************************************************************\
+ok: [nexus_dashboard] => \
+  msg: |-\
+    Aggregation Port-channel Interface Deployment Result:\
+    - Changed: False\
+    - Response: 0 operation(s)\
+\
+TASK [Configure Port-channel interfaces on access/POAP switches via dcnm_interface] *******************************************************************************************************************************************************************************************\
+fatal: [nexus_dashboard]: FAILED! => changed=false \
+  msg:\
+    CHANGED:\
+    - debugs: []\
+      deferred: []\
+      delete_deploy: []\
+      deleted: []\
+      deploy:\
+      - fabricName: mgmt-fabric\
+        ifName: Port-channel110\
+        serialNumber: FDO292012EE\
+      merged: []\
+      overridden: []\
+      query: []\
+      replaced:\
+      - interfaceType: INTERFACE_PORT_CHANNEL\
+        interfaces:\
+        - fabricName: mgmt-fabric\
+          ifName: Port-channel110\
+          interfaceType: INTERFACE_PORT_CHANNEL\
+          nvPairs:\
+            ADMIN_STATE: 'true'\
+            ALLOWED_VLANS: none\
+            BPDUGUARD_ENABLED: 'false'\
+            CDP_ENABLE: true\
+            CONF: ''\
+            DESC: INF;EL-CAGCC00-01MNSP01/2;Po110\
+            DISABLE_LACP_SUSPEND: false\
+            ENABLE_MONITOR: false\
+            ENABLE_ORPHAN_PORT: false\
+            ENABLE_PFC: false\
+            LACP_PORT_PRIO: 32768\
+            LACP_RATE: normal\
+            MEMBER_INTERFACES: e1/49,e1/50\
+            MTU: jumbo\
+            NATIVE_VLAN: '2'\
+            PC_MODE: active\
+            PORTTYPE_FAST_ENABLED: 'true'\
+            PORT_DUPLEX_MODE: auto\
+            PO_ID: Port-channel110\
+            SPEED: Auto\
+          serialNumber: FDO292012EE\
+        policy: int_port_channel_trunk_host\
+        skipResourceCheck: 'false'\
+      skipped: []\
+    DATA:\
+    - column: 0\
+      entity: EL-CAGCC00-01MNL10:Port-channel110\
+      impact: null\
+      line: 0\
+      message: 'Switch [EL-CAGCC00-01MNL10/FDO292012EE]: Member port Ethernet1/49 does not exist on the switch. <br/>Switch [EL-CAGCC00-01MNL10/FDO292012EE]: Member port Ethernet1/50 does not exist on the switch. '\
+      recommendation: null\
+      reportItemType: ERROR\
+      trigger: null\
+    MESSAGE: Internal Server Error\
+    METHOD: POST\
+    REQUEST_PATH: https://el-cagcc00-01vnd01.devfg.rbc.com:443/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/globalInterface\
+    RETURN_CODE: 500\
+    body:\
+    - column: 0\
+      entity: EL-CAGCC00-01MNL10:Port-channel110\
+      impact: null\
+      line: 0\
+      message: 'Switch [EL-CAGCC00-01MNL10/FDO292012EE]: Member port Ethernet1/49 does not exist on the switch. <br/>Switch [EL-CAGCC00-01MNL10/FDO292012EE]: Member port Ethernet1/50 does not exist on the switch. '\
+      recommendation: null\
+      reportItemType: ERROR\
+      trigger: null\
+    cache-control: no-cache, must-revalidate, proxy-revalidate, max-age=0\
+    connection: close\
+    content-length: '355'\
+    content-security-policy: 'default-src ''self''; script-src ''self'' ''unsafe-eval'' ''unsafe-inline'' https://*.qualtrics.com; style-src-elem ''self'' ''unsafe-inline''; style-src ''self'' ''unsafe-inline''; base-uri ''self''; frame-ancestors ''self''; font-src ''self'' data:; img-src ''self'' https://*.qualtrics.com data: alln-extcloud-storage.cisco.com; navigate-to *; worker-src ''self'' blob:;frame-src ''self'' https://*.qualtrics.com ; connect-src ''self'' https://*.qualtrics.com wss:;'\
+    content-type: application/json\
+    date: Fri, 20 Feb 2026 04:19:49 GMT\
+    error:\
+      code: -1\
+      message:\
+      - column: 0\
+        entity: EL-CAGCC00-01MNL10:Port-channel110\
+        impact: null\
+        line: 0\
+        message: 'Switch [EL-CAGCC00-01MNL10/FDO292012EE]: Member port Ethernet1/49 does not exist on the switch. <br/>Switch [EL-CAGCC00-01MNL10/FDO292012EE]: Member port Ethernet1/50 does not exist on the switch. '\
+        recommendation: null\
+        reportItemType: ERROR\
+        trigger: null\
+    method: POST\
+    msg: OK (355 bytes)\
+    referrer-policy: strict-origin-when-cross-origin\
+    status: 500\
+    strict-transport-security: max-age=31536000; includeSubDomains\
+    url: https://el-cagcc00-01vnd01.devfg.rbc.com:443/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/globalInterface\
+    x-content-type-options: nosniff\
+    x-frame-options: SAMEORIGIN\
+    x-ratelimit-limit: '-1'\
+    x-ratelimit-remaining: '-1'\
+    x-ratelimit-reset: '1559582945'\
+    x-xss-protection: 1; mode=block\
+        to retry, use: --limit @/Users/183791730/GITREPOS/ansible-dc-lan-migration/retry/1.4-provision-interfaces.retry\
+\
+PLAY RECAP ********************************************************************************************************************************************************************************************************************************************************************\
+nexus_dashboard            : ok=17   changed=1    unreachable=0    failed=1    skipped=2    rescued=0    ignored=0   }

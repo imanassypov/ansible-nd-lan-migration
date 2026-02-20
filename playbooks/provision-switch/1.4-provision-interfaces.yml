@@ -135,6 +135,16 @@
         - switches_to_provision | length > 0
         - l2_interfaces_lookup is defined
 
+    - name: Debug - Show port-channel members extracted for pre-staging
+      ansible.builtin.debug:
+        msg: |
+          Port-channel member interfaces auto-extracted for pre-staging:
+          {% for iface in eth_interface_config | selectattr('profile.description', 'search', 'member') | list %}
+          - {{ iface.name }} on {{ iface.switch[0] }}: {{ iface.profile.description }}
+          {% endfor %}
+          Total member interfaces: {{ eth_interface_config | selectattr('profile.description', 'search', 'member') | list | length }}
+      when: eth_interface_config is defined
+
     #--------------------------------------------------------------------------
     # Separate interfaces by switch role for deployment strategy
     #--------------------------------------------------------------------------
