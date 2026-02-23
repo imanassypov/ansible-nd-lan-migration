@@ -60,6 +60,7 @@ backups/
 configs/
 fabrics/
 source_configs/
+inventory/
 
 # Environment files
 .env

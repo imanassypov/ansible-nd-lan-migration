@@ -69,7 +69,7 @@ VPC Settings:
         'switch': [peer1_ip, peer2_ip],
         'deploy': false,
         'profile': {
-          'admin_state': true,
+          'admin_state': vpc.enabled | default(true),
           'mode': vpc.mode,
           'peer1_pcid': vpc.vpc_id,
           'peer2_pcid': vpc.vpc_id,

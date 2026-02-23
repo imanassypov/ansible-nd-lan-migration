@@ -83,14 +83,19 @@
         msg: "Provisioning {{ switches_to_provision | length }} switch(es): {{ switches_to_provision | map(attribute='inventory_hostname') | list }}"
       when: switches_to_provision | length > 0
 
+    # Build fabric paths from nd_fabrics for targeted file searches
+    - name: Build fabric paths from nd_fabrics
+      ansible.builtin.set_fact:
+        fabric_paths: "{{ nd_fabrics | map(attribute='FABRIC_NAME') | map('regex_replace', '^(.*)$', playbook_dir ~ '/../../fabrics/\\1') | list }}"
+      when: switches_to_provision | length > 0
+
     #--------------------------------------------------------------------------
     # Load L2 interface inventory from fabric directories
     #--------------------------------------------------------------------------
     - name: Find all l2_interfaces.yml files
       ansible.builtin.find:
-        paths: "{{ playbook_dir }}/../../fabrics"
+        paths: "{{ fabric_paths }}"
         patterns: "l2_interfaces.yml"
-        recurse: true
       register: l2_interfaces_files
       when: switches_to_provision | length > 0
 
@@ -316,9 +321,8 @@
     #--------------------------------------------------------------------------
     - name: Find all l2_vpc_interfaces.yml files
       ansible.builtin.find:
-        paths: "{{ playbook_dir }}/../../fabrics"
+        paths: "{{ fabric_paths }}"
         patterns: "l2_vpc_interfaces.yml"
-        recurse: true
       register: vpc_interfaces_files
       when: switches_to_provision | length > 0
 
@@ -445,9 +449,8 @@
     #--------------------------------------------------------------------------
     - name: Find all l3_interfaces.yml files
       ansible.builtin.find:
-        paths: "{{ playbook_dir }}/../../fabrics"
+        paths: "{{ fabric_paths }}"
         patterns: "l3_interfaces.yml"
-        recurse: true
       register: l3_interfaces_files
       when: switches_to_provision | length > 0
 
@@ -492,9 +495,8 @@
     #--------------------------------------------------------------------------
     - name: Find all switch_details.yml files
       ansible.builtin.find:
-        paths: "{{ playbook_dir }}/../../fabrics"
+        paths: "{{ fabric_paths }}"
         patterns: "switch_details.yml"
-        recurse: true
       register: switch_details_files
       when: switches_to_provision | length > 0
 

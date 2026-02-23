@@ -59,6 +59,12 @@
             | list
           }}
 
+    # Build fabric paths from nd_fabrics for targeted file searches
+    - name: Build fabric paths from nd_fabrics
+      ansible.builtin.set_fact:
+        fabric_paths: "{{ nd_fabrics | map(attribute='FABRIC_NAME') | map('regex_replace', '^(.*)$', playbook_dir ~ '/../../fabrics/\\1') | list }}"
+      when: switches_to_provision | length > 0
+
     # Load feature lookup table
     - name: Load feature lookup table
       ansible.builtin.include_vars:
@@ -68,9 +74,8 @@
     # Load switch features from all fabrics
     - name: Find all switch_features.yml files
       ansible.builtin.find:
-        paths: "{{ playbook_dir }}/../../fabrics"
+        paths: "{{ fabric_paths }}"
         patterns: "switch_features.yml"
-        recurse: true
       register: switch_features_files
       when: switches_to_provision | length > 0
 

@@ -129,22 +129,67 @@
       run_once: true
       delegate_to: localhost
 
-    # Group switches by fabric for organized inventory generation
-    - name: Build fabric-grouped inventory
-      set_fact:
-        switch_inventory: >-
-          {{
-          switch_inventory | default([]) + [{
-            'name': item,
-            'switches': all_switch_profiles | selectattr('fabric', 'equalto', item) | list
-          }]
-          }}
+    #--------------------------------------------------------------------------
+    # Validate fabric names against fabric_definitions.yml
+    # Ensures all switches belong to fabrics defined in nd_fabrics
+    #--------------------------------------------------------------------------
+    - name: Load fabric definitions for validation
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../../inventory/host_vars/nexus_dashboard/fabric_definitions.yml"
       run_once: true
       delegate_to: localhost
-      loop: "{{ all_switch_profiles | map(attribute='fabric') | unique | list }}"
-      loop_control:
-        label: "{{ item }}"  
-      
+
+    - name: Build list of valid fabric names from nd_fabrics
+      ansible.builtin.set_fact:
+        valid_fabric_names: "{{ nd_fabrics | map(attribute='FABRIC_NAME') | list }}"
+      run_once: true
+      delegate_to: localhost
+
+    - name: Identify switches with invalid fabric names
+      ansible.builtin.set_fact:
+        invalid_fabric_switches: >-
+          {{ all_switch_profiles 
+             | selectattr('fabric', 'defined')
+             | rejectattr('fabric', 'in', valid_fabric_names)
+             | list }}
+      run_once: true
+      delegate_to: localhost
+
+    - name: Fail if any switches have fabric names not in fabric_definitions.yml
+      ansible.builtin.fail:
+        msg: |
+          ═══════════════════════════════════════════════════════════════════════
+          FABRIC NAME VALIDATION FAILED
+          ═══════════════════════════════════════════════════════════════════════
+          The following switches have fabric names not defined in fabric_definitions.yml:
+          {% for sw in invalid_fabric_switches %}
+          - {{ sw.hostname }}: fabric='{{ sw.fabric }}'
+          {% endfor %}
+
+          Valid fabric names (from nd_fabrics):
+          {% for name in valid_fabric_names %}
+          - {{ name }}
+          {% endfor %}
+
+          Fix: Update hosts.yml to use a valid FABRIC_NAME or add the fabric to fabric_definitions.yml
+          ═══════════════════════════════════════════════════════════════════════
+      when: invalid_fabric_switches | length > 0
+      run_once: true
+      delegate_to: localhost
+
+    - name: Display validated fabric names
+      ansible.builtin.debug:
+        msg: |
+          ═══════════════════════════════════════════════════════════════════════
+          FABRIC VALIDATION PASSED
+          ═══════════════════════════════════════════════════════════════════════
+          Valid fabrics from nd_fabrics: {{ valid_fabric_names | join(', ') }}
+          Switch fabrics found: {{ all_switch_profiles | map(attribute='fabric') | unique | list | join(', ') }}
+          ═══════════════════════════════════════════════════════════════════════
+      run_once: true
+      delegate_to: localhost
+
+    # Group switches by fabric for organized inventory generation
     - name: Build fabric-grouped inventory
       set_fact:
         switch_inventory: >-
@@ -797,6 +842,9 @@
                 {%- set base_iface = base_intfs | selectattr('name', 'equalto', iface.name) | list -%}
                 {%- if base_iface | length > 0 and base_iface[0].description is defined -%}
                   {%- set _ = iface_data.update({'description': base_iface[0].description}) -%}
+                {%- endif -%}
+                {%- if base_iface | length > 0 -%}
+                  {%- set _ = iface_data.update({'enabled': base_iface[0].enabled | default(true)}) -%}
                 {%- endif -%}
                 {%- set iface_type = 'eth' -%}
                 {%- if iface.name.startswith('Vlan') -%}

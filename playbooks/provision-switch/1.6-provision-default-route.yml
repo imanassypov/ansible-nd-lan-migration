@@ -62,14 +62,19 @@
             | list
           }}
 
+    # Build fabric paths from nd_fabrics for targeted file searches
+    - name: Build fabric paths from nd_fabrics
+      ansible.builtin.set_fact:
+        fabric_paths: "{{ nd_fabrics | map(attribute='FABRIC_NAME') | map('regex_replace', '^(.*)$', playbook_dir ~ '/../../fabrics/\\1') | list }}"
+      when: switches_to_provision | length > 0
+
     #--------------------------------------------------------------------------
     # Load static routes data
     #--------------------------------------------------------------------------
     - name: Find all static_routes.yml files
       ansible.builtin.find:
-        paths: "{{ playbook_dir }}/../../fabrics"
+        paths: "{{ fabric_paths }}"
         patterns: "static_routes.yml"
-        recurse: true
       register: static_routes_files
       when: switches_to_provision | length > 0
 

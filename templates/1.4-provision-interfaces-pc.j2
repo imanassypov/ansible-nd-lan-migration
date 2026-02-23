@@ -55,7 +55,7 @@ Port-channel Settings:
         'switch': [switch_ip],
         'deploy': false,
         'profile': {
-          'admin_state': true,
+          'admin_state': iface.enabled | default(true),
           'mode': iface.mode,
           'members': members,
           'pc_mode': 'active',

@@ -51,7 +51,7 @@ Port-channel Member Auto-extraction:
             'switch': [switch_ip],
             'deploy': false,
             'profile': {
-              'admin_state': true,
+              'admin_state': pc.enabled | default(true),
               'mode': pc.mode | default('trunk'),
               'bpdu_guard': 'true',
               'port_type_fast': true,
@@ -75,6 +75,8 @@ Port-channel Member Auto-extraction:
     {# --- Standard Ethernet interfaces --- #}
     {% set eth_interfaces = l2_interfaces_lookup[switch_name].interfaces | selectattr('type', 'equalto', 'eth') | list %}
     {% for iface in eth_interfaces %}
+      {# Only process interfaces that have explicit mode configuration #}
+      {% if iface.mode is defined %}
       {% set iface_name = iface.name | regex_replace('^Ethernet', 'eth') %}
       {% set iface_config = {
         'name': iface_name,
@@ -82,7 +84,7 @@ Port-channel Member Auto-extraction:
         'switch': [switch_ip],
         'deploy': false,
         'profile': {
-          'admin_state': true,
+          'admin_state': iface.enabled | default(true),
           'mode': iface.mode,
           'description': iface.description | default('')
         }
@@ -102,6 +104,7 @@ Port-channel Member Auto-extraction:
         }) %}
       {% endif %}
       {% set _ = config.append(iface_config) %}
+      {% endif %}
     {% endfor %}
   {% endif %}
 {% endfor %}

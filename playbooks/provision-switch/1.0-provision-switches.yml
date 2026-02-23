@@ -34,7 +34,8 @@
 #   - POST /api/v1/manage/fabrics/<fabric>/switches (Discovery)
 #
 # Templates Used:
-#   - 1.0-preprovision-new-switches.j2: Jinja2 template for POAP API JSON payload
+#   - 1.0-provision-switches-poap.j2: POAP pre-provisioning JSON payload
+#   - 1.0-provision-switches-discovery.j2: Switch discovery JSON payload
 #
 # Tags:
 #   - preprovision-switches: Run only switch pre-provisioning tasks
@@ -73,6 +74,12 @@
             | list
           }}
 
+    # Build fabric paths from nd_fabrics for targeted file searches
+    - name: Build fabric paths from nd_fabrics
+      ansible.builtin.set_fact:
+        fabric_paths: "{{ nd_fabrics | map(attribute='FABRIC_NAME') | map('regex_replace', '^(.*)$', playbook_dir ~ '/../../fabrics/\\1') | list }}"
+      when: switches_to_preprovision | length > 0
+
     #--------------------------------------------------------------------------
     # Load switch_details.yml for workflow classification
     # Compare destination_switch_sn (hosts.yml) with serial_number (switch_details.yml):
@@ -81,9 +88,8 @@
     #--------------------------------------------------------------------------
     - name: Find switch_details.yml files for workflow classification
       ansible.builtin.find:
-        paths: "{{ playbook_dir }}/../../fabrics"
+        paths: "{{ fabric_paths }}"
         patterns: "switch_details.yml"
-        recurse: true
       register: switch_details_files_early
       delegate_to: localhost
       when: switches_to_preprovision | length > 0
@@ -169,9 +175,8 @@
     #--------------------------------------------------------------------------
     - name: Find all static_routes.yml files
       ansible.builtin.find:
-        paths: "{{ playbook_dir }}/../../fabrics"
+        paths: "{{ fabric_paths }}"
         patterns: "static_routes.yml"
-        recurse: true
       register: static_routes_files
       when: switches_to_preprovision | length > 0
 
@@ -208,9 +213,8 @@
     #--------------------------------------------------------------------------
     - name: Find all l3_interfaces.yml files
       ansible.builtin.find:
-        paths: "{{ playbook_dir }}/../../fabrics"
+        paths: "{{ fabric_paths }}"
         patterns: "l3_interfaces.yml"
-        recurse: true
       register: l3_interfaces_files
       when: switches_to_preprovision | length > 0
 
@@ -370,34 +374,7 @@
       when: preprovision_by_fabric_filtered is defined
 
     # Pre-provision switches to NDFC via POAP API
-    - name: Build POAP payloads per fabric
-      ansible.builtin.set_fact:
-        poap_payloads: |
-          {%- set payloads = {} -%}
-          {%- for fabric, switches in preprovision_by_fabric_filtered.items() -%}
-            {%- set switch_list = [] -%}
-            {%- for switch in switches -%}
-              {%- set entry = {
-                "serialNumber": switch.serial_number,
-                "model": switch.model,
-                "version": switch.version,
-                "hostname": switch.hostname,
-                "ipAddress": switch.ip_address,
-                "password": nd_switch_password,
-                "discoveryAuthProtocol": 0,
-                "data": '{"modulesModel": ["' ~ switch.model ~ '"], "gateway": "' ~ switch.gateway ~ '"}',
-                "imagePolicy": "",
-                "role": switch.role
-              } -%}
-              {%- set _ = switch_list.append(entry) -%}
-            {%- endfor -%}
-            {%- set _ = payloads.update({fabric: switch_list}) -%}
-          {%- endfor -%}
-          {{ payloads }}
-      when:
-        - preprovision_by_fabric_filtered is defined
-        - preprovision_by_fabric_filtered | length > 0
-
+    # Uses template: templates/1.0-provision-switches-poap.j2
     - name: Pre-provision switches to NDFC
       cisco.nd.nd_rest:
         host: "{{ ansible_host }}"
@@ -409,13 +386,25 @@
         login_domain: "{{ ansible_httpapi_login_domain }}"
         path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{{ item.key }}/inventory/poap"
         method: POST
-        content: "{{ item.value | to_json }}"
-      loop: "{{ poap_payloads | dict2items }}"
+        content: >-
+          [{% for switch in item.value %}{
+            "serialNumber": "{{ switch.serial_number }}",
+            "model": "{{ switch.model }}",
+            "version": "{{ switch.version }}",
+            "hostname": "{{ switch.hostname }}",
+            "ipAddress": "{{ switch.ip_address }}",
+            "password": "{{ nd_switch_password }}",
+            "discoveryAuthProtocol": 0,
+            "data": "{\"modulesModel\": [\"{{ switch.model }}\"], \"gateway\": \"{{ switch.gateway }}\"}",
+            "imagePolicy": "",
+            "role": "{{ switch.role }}"
+          }{% if not loop.last %},{% endif %}{% endfor %}]
+      loop: "{{ preprovision_by_fabric_filtered | dict2items }}"
       loop_control:
         label: "{{ item.key }} ({{ item.value | length }} switches)"
       when:
-        - poap_payloads is defined
-        - poap_payloads | length > 0
+        - preprovision_by_fabric_filtered is defined
+        - preprovision_by_fabric_filtered | length > 0
       register: preprovision_results
 
     - name: Display pre-provisioning results
@@ -429,6 +418,7 @@
             Switches: {% for sw in result.item.value %}{{ sw.hostname }}{% if not loop.last %}, {% endif %}{% endfor %}
           {% endif %}
           {% endfor %}
+          Template: templates/1.0-provision-switches-poap.j2
       when: preprovision_results is defined
 
     # Capture POAP switch hostnames to exclude from role assignment
@@ -459,9 +449,8 @@
     # Load switch_details.yml to get serial numbers for discovery and role assignment
     - name: Find switch_details.yml files for discovery
       ansible.builtin.find:
-        paths: "../../fabrics"
+        paths: "{{ fabric_paths }}"
         patterns: "switch_details.yml"
-        recurse: true
       register: switch_details_files
       delegate_to: localhost
       tags:
@@ -566,7 +555,6 @@
         - discovery_by_fabric is defined
         - discovery_by_fabric | length > 0
       register: existing_managed_query
-      ignore_errors: true
       tags:
         - discover-switches
 
@@ -625,7 +613,7 @@
         - discover-switches
 
     # Discover switches to NDFC via Manage API
-    # Uses the switches array format required by the API
+    # Uses template: templates/1.0-provision-switches-discovery.j2
     # Note: Discovery is a long-running operation, timeout extended to 300s
     - name: Discover existing switches to NDFC
       cisco.nd.nd_rest:
@@ -646,20 +634,15 @@
           preserveConfig: "{{ preserve_config | default(true) | bool }}"
           useCredentialForWrite: "{{ use_credential_for_write | default(false) | bool }}"
           switches: >-
-            {%- set switch_list = [] -%}
-            {%- for sw in item.value -%}
-              {%- set switch_entry = {
-                'ip': sw.ip_address,
-                'hostname': sw.hostname,
-                'model': sw.model | default(''),
-                'softwareVersion': sw.software_version | default(''),
-                'serialNumber': sw.serial_number | default(''),
-                'vdcId': 0,
-                'vdcMac': ''
-              } -%}
-              {%- set _ = switch_list.append(switch_entry) -%}
-            {%- endfor -%}
-            {{ switch_list }}
+            [{% for sw in item.value %}{
+              "ip": "{{ sw.ip_address }}",
+              "hostname": "{{ sw.hostname }}",
+              "model": "{{ sw.model | default('') }}",
+              "softwareVersion": "{{ sw.software_version | default('') }}",
+              "serialNumber": "{{ sw.serial_number | default('') }}",
+              "vdcId": 0,
+              "vdcMac": ""
+            }{% if not loop.last %},{% endif %}{% endfor %}]
       loop: "{{ discovery_by_fabric_filtered | dict2items }}"
       loop_control:
         label: "{{ item.key }} ({{ item.value | length }} switches)"
@@ -683,6 +666,7 @@
             Switches: {% for sw in result.item.value %}{{ sw.hostname }}{% if not loop.last %}, {% endif %}{% endfor %}
           {% endif %}
           {% endfor %}
+          Template: templates/1.0-provision-switches-discovery.j2
           ═══════════════════════════════════════════════════════════════════════
       when: discovery_results is defined
       tags:
@@ -785,7 +769,6 @@
         - roles_by_fabric is defined
         - roles_by_fabric | length > 0
       register: role_assignment_results
-      ignore_errors: true
       tags:
         - assign-roles
         - discover-switches
