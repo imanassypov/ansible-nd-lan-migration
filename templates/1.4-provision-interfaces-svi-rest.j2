@@ -15,6 +15,16 @@ Input Variables:
   l3_interfaces_lookup     - L3 interface data per switch (from l3_interfaces.yml)
   switch_details_lookup    - Switch serial numbers keyed by IP (from switch_details.yml)
 
+Inventory Variables (hosts.yml):
+  mgmt_int                    - Management interface name (e.g., Vlan199)
+  mgmt_int_dhcp_relay_list    - List of DHCP relay servers for management interface
+                                Used for POAP leaf switches to acquire temporary DHCP IP
+
+DHCP Relay Logic:
+  - If interface matches mgmt_int and mgmt_int_dhcp_relay_list is defined:
+    Use DHCP servers from inventory (mgmt_int_dhcp_relay_list)
+  - Otherwise: Use DHCP servers from discovery data (iface.dhcp_relay)
+
 Data Structure (l3_interfaces.yml):
   switches:
     <hostname>:
@@ -64,13 +74,18 @@ Output:
         {% set prefix_len = ip_parts[1] | default('24') %}
         {# Extract VLAN ID from interface name (e.g., Vlan199 -> 199) #}
         {% set vlan_id = iface.name | regex_replace('^[Vv]lan', '') %}
+        {# Determine DHCP relay servers: 
+           - If interface matches mgmt_int and mgmt_int_dhcp_relay_list is defined, use inventory variable
+           - Otherwise fall back to iface.dhcp_relay from discovery #}
+        {% set is_mgmt_int = (iface.name | lower == switch.mgmt_int | default('') | lower) %}
+        {% set dhcp_relay_list = switch.mgmt_int_dhcp_relay_list | default([]) if is_mgmt_int and switch.mgmt_int_dhcp_relay_list is defined else iface.dhcp_relay | default([]) %}
         {# Build freeform CONF section for OSPF, DHCP relay, and HSRP timers #}
         {% set conf_lines = [] %}
         {% if iface.ospf is defined %}
           {% set _ = conf_lines.append('  ip router ospf ' ~ iface.ospf.process ~ ' area ' ~ iface.ospf.area) %}
         {% endif %}
-        {% if iface.dhcp_relay is defined %}
-          {% for dhcp_server in iface.dhcp_relay %}
+        {% if dhcp_relay_list | length > 0 %}
+          {% for dhcp_server in dhcp_relay_list %}
             {% set _ = conf_lines.append('  ip dhcp relay address ' ~ dhcp_server) %}
           {% endfor %}
         {% endif %}
@@ -111,11 +126,11 @@ Output:
           'HSRP_PRIORITY': iface.hsrp.priority | default('') | string if iface.hsrp is defined else '',
           'PREEMPT': 'true' if (iface.hsrp is defined and iface.hsrp.preempt | default(false)) else 'false',
           'MAC': '',
-          'dhcpServerAddr1': iface.dhcp_relay[0] | default('') if iface.dhcp_relay is defined else '',
+          'dhcpServerAddr1': dhcp_relay_list[0] | default('') if dhcp_relay_list | length > 0 else '',
           'vrfDhcp1': '',
-          'dhcpServerAddr2': iface.dhcp_relay[1] | default('') if iface.dhcp_relay is defined and iface.dhcp_relay | length > 1 else '',
+          'dhcpServerAddr2': dhcp_relay_list[1] | default('') if dhcp_relay_list | length > 1 else '',
           'vrfDhcp2': '',
-          'dhcpServerAddr3': iface.dhcp_relay[2] | default('') if iface.dhcp_relay is defined and iface.dhcp_relay | length > 2 else '',
+          'dhcpServerAddr3': dhcp_relay_list[2] | default('') if dhcp_relay_list | length > 2 else '',
           'vrfDhcp3': '',
           'advSubnetInUnderlay': 'false',
           'ENABLE_NETFLOW': 'false',

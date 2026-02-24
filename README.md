@@ -408,6 +408,9 @@ aggegation:
       fabric: mgmt-fabric
       add_to_fabric: true
       mgmt_int: Vlan199
+      # DHCP relay servers for management VLAN (for POAP leaf switches)
+      mgmt_int_dhcp_relay_list:
+        - 198.18.1.100
       # VPC port-channels that connect to POAP leaf switches
       disable_lacp_suspend_individual_po_list:
         - 104
@@ -419,6 +422,9 @@ aggegation:
       fabric: mgmt-fabric
       add_to_fabric: true
       mgmt_int: Vlan199
+      # DHCP relay servers for management VLAN (for POAP leaf switches)
+      mgmt_int_dhcp_relay_list:
+        - 198.18.1.100
       # VPC port-channels that connect to POAP leaf switches
       disable_lacp_suspend_individual_po_list:
         - 104
@@ -426,7 +432,17 @@ aggegation:
       destination_switch_sn: 9DVWNV7F75Y
 ```
 
-When `1.4-provision-interfaces.yml` runs, VPCs in this list will have `DISABLE_LACP_SUSPEND: true` set in NDFC, which translates to `no lacp suspend-individual` on the switch.
+### POAP Inventory Variables Reference
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `mgmt_int` | string | Management interface name (e.g., `Vlan199`). Used to identify the SVI that receives DHCP relay configuration. |
+| `mgmt_int_dhcp_relay_list` | list | List of DHCP server IPs to configure as relay addresses on the management SVI. Required for POAP leaf switches to acquire temporary DHCP IP addresses during bootstrap. |
+| `disable_lacp_suspend_individual_po_list` | list | List of VPC IDs (integers) that should have `no lacp suspend-individual` configured. Required for VPCs connecting to POAP leaf switches. |
+
+When `1.4-provision-interfaces.yml` runs:
+- VPCs in `disable_lacp_suspend_individual_po_list` get `DISABLE_LACP_SUSPEND: true` in NDFC → `no lacp suspend-individual` on switch
+- SVIs matching `mgmt_int` get DHCP relay addresses from `mgmt_int_dhcp_relay_list` → `ip dhcp relay address <ip>` on switch
 
 **Debug output example:**
 ```
@@ -439,7 +455,7 @@ Configuring 10 VPC interface(s):
 ...
 ```
 
-> **Post-POAP Cleanup**: Once all downstream leaf switches have completed POAP bootstrapping and their port-channels are operational, you can remove the `disable_lacp_suspend_individual_po_list` variable from the aggregation switches and re-run `1.4-provision-interfaces.yml` to restore the default LACP suspend-individual behavior.
+> **Post-POAP Cleanup**: Once all downstream leaf switches have completed POAP bootstrapping and their port-channels are operational, you can remove `disable_lacp_suspend_individual_po_list` and `mgmt_int_dhcp_relay_list` from the aggregation switches, then re-run `1.4-provision-interfaces.yml` to restore default settings.
 
 ### Why This is Required
 
