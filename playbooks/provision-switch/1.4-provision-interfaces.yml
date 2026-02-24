@@ -376,7 +376,8 @@
         msg: |
           Configuring {{ vpc_interface_config | length }} VPC interface(s):
           {% for vpc in vpc_interface_config %}
-          - {{ vpc.name }}: {{ vpc.profile.mode }} mode, peers {{ vpc.switch[0] }}
+          - {{ vpc.name }}: {{ vpc.profile.mode }} mode, peers {{ vpc.switch[0] }}{% if vpc.profile.disable_lacp_suspend_individual | default(false) %}, POAP support (suspend-individual disabled){% endif %}
+
           {% endfor %}
       when: vpc_interface_config is defined and vpc_interface_config | length > 0
 

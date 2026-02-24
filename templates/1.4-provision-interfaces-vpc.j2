@@ -31,6 +31,9 @@ VPC Settings:
   - mtu: jumbo (9216 bytes)
   - bpdu_guard: true
   - port_type_fast: true (spanning-tree edge)
+  - lacp_suspend_individual: Set to 'true' if VPC ID is in the switch's
+    lacp_suspend_individual_po_list (inventory variable). Required for
+    port-channels connecting to POAP leaf switches before they boot.
 
 ================================================================================
 #}
@@ -63,6 +66,11 @@ VPC Settings:
         {% endif %}
       {% endif %}
       {% set vpc_name = 'vpc' + vpc.vpc_id | string %}
+      {# Check if this VPC ID should have LACP suspend-individual DISABLED (for POAP leaf switches) #}
+      {# When disable_lacp_suspend_individual=true, the port stays up without LACP peer - required for POAP #}
+      {% set peer1_lacp_list = hostvars[peer1_name].disable_lacp_suspend_individual_po_list | default([]) %}
+      {% set peer2_lacp_list = hostvars[peer2_name].disable_lacp_suspend_individual_po_list | default([]) %}
+      {% set disable_lacp_suspend = true if (vpc.vpc_id | int in peer1_lacp_list or vpc.vpc_id | int in peer2_lacp_list) else false %}
       {% set vpc_config = {
         'name': vpc_name,
         'type': 'vpc',
@@ -79,7 +87,7 @@ VPC Settings:
           'bpdu_guard': 'true',
           'port_type_fast': true,
           'mtu': 'jumbo',
-          'lacp_suspend_individual': 'false'
+          'disable_lacp_suspend_individual': disable_lacp_suspend
         }
       } %}
       {% if vpc.mode == 'trunk' %}

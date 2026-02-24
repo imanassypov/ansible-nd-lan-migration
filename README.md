@@ -392,7 +392,64 @@ Already configured (skipped): 5
 
 ## POAP Requirements for Aggregation Port-Channels
 
-When configuring VPC port-channels on aggregation switches that connect to POAP-enabled leaf switches, the following configuration is **required** to ensure successful POAP bootstrapping:
+When configuring VPC port-channels on aggregation switches that connect to POAP-enabled leaf switches, specific LACP and spanning-tree settings are **required** to ensure successful POAP bootstrapping.
+
+### Automated Configuration via Inventory
+
+The `disable_lacp_suspend_individual_po_list` variable in `inventory/hosts.yml` automates the required LACP suspend-individual configuration through NDFC. Add this variable to aggregation switches with a list of VPC IDs that connect to POAP leaf switches:
+
+```yaml
+# inventory/hosts.yml
+aggegation:
+  hosts:
+    agg01:
+      ansible_host: 198.18.24.12
+      role: aggregation
+      fabric: mgmt-fabric
+      add_to_fabric: true
+      mgmt_int: Vlan199
+      # VPC port-channels that connect to POAP leaf switches
+      disable_lacp_suspend_individual_po_list:
+        - 104
+        - 105
+      destination_switch_sn: 9S7PWWEGDWW
+    agg02:
+      ansible_host: 198.18.24.13
+      role: aggregation
+      fabric: mgmt-fabric
+      add_to_fabric: true
+      mgmt_int: Vlan199
+      # VPC port-channels that connect to POAP leaf switches
+      disable_lacp_suspend_individual_po_list:
+        - 104
+        - 105
+      destination_switch_sn: 9DVWNV7F75Y
+```
+
+When `1.4-provision-interfaces.yml` runs, VPCs in this list will have `DISABLE_LACP_SUSPEND: true` set in NDFC, which translates to `no lacp suspend-individual` on the switch.
+
+**Debug output example:**
+```
+Configuring 10 VPC interface(s):
+- vpc101: trunk mode, peers 198.18.24.12
+- vpc102: trunk mode, peers 198.18.24.12
+- vpc103: trunk mode, peers 198.18.24.12
+- vpc104: trunk mode, peers 198.18.24.12, POAP support (suspend-individual disabled)
+- vpc105: trunk mode, peers 198.18.24.12, POAP support (suspend-individual disabled)
+...
+```
+
+> **Post-POAP Cleanup**: Once all downstream leaf switches have completed POAP bootstrapping and their port-channels are operational, you can remove the `disable_lacp_suspend_individual_po_list` variable from the aggregation switches and re-run `1.4-provision-interfaces.yml` to restore the default LACP suspend-individual behavior.
+
+### Why This is Required
+
+During POAP, the leaf switch boots with no configuration — LACP is not yet enabled on its interfaces. The aggregation switch's port-channel member ports must remain active individually to allow:
+
+1. **DHCP Discovery**: The leaf switch sends DHCP requests from its physical interface (not a port-channel)
+2. **POAP Script Download**: Configuration scripts are downloaded before LACP is configured
+3. **STP Convergence**: BPDUs flow through member interfaces before the port-channel forms
+
+Without `no lacp suspend-individual`, the aggregation switch suspends its member ports when no LACP PDUs are received, blocking all traffic from the booting leaf switch.
 
 ### Required Port-Channel Configuration
 
