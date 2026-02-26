@@ -1,76 +1,129 @@
-<mxfile host="Electron" version="24.0.0">
+<mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/24.7.8 Chrome/128.0.6613.36 Electron/32.0.1 Safari/537.36" version="24.7.8">
   <diagram name="1.2 - Provision Features" id="d1-2-provision-features">
-    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1050" pageHeight="1500" math="0" shadow="0">
+    <mxGraphModel dx="1242" dy="769" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1050" pageHeight="1500" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-
-        <!-- TITLE -->
-        <mxCell id="t1" value="1.2 — Provision Features" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=18;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="30" y="10" width="500" height="36" as="geometry"/></mxCell>
-        <mxCell id="t2" value="Hosts: nexus_dashboard | Template: 1.2-provision-features.j2 | Policy: feature template or switch_freeform" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=2;" vertex="1" parent="1"><mxGeometry x="30" y="44" width="620" height="18" as="geometry"/></mxCell>
-
-        <!-- LEGEND -->
-        <mxCell id="lg1" value="Process" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="1"><mxGeometry x="870" y="80" width="100" height="25" as="geometry"/></mxCell>
-        <mxCell id="lg2" value="Decision" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1"><mxGeometry x="870" y="115" width="100" height="35" as="geometry"/></mxCell>
-        <mxCell id="lg3" value="Load Data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1"><mxGeometry x="870" y="160" width="100" height="25" as="geometry"/></mxCell>
-        <mxCell id="lg4" value="GET API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1"><mxGeometry x="870" y="195" width="100" height="25" as="geometry"/></mxCell>
-        <mxCell id="lg5" value="POST API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=9;" vertex="1" parent="1"><mxGeometry x="870" y="230" width="100" height="25" as="geometry"/></mxCell>
-        <mxCell id="lg6" value="Display" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1"><mxGeometry x="870" y="265" width="100" height="25" as="geometry"/></mxCell>
-
-        <!-- Feature lookup side panel -->
-        <mxCell id="fl1" value="feature_lookup.yml Mappings&#xa;━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━&#xa;tacacs+   → switch_tacacs&#xa;nxapi      → switch_nxapi&#xa;interface-vlan→ int_vlan_mgmt&#xa;lacp       → switch_lacp&#xa;lldp       → switch_lldp&#xa;bfd        → switch_bfd&#xa;bgp        → switch_bgp&#xa;dhcp       → switch_dhcp&#xa;ospf       → switch_ospf&#xa;vpc        → switch_vpc&#xa;bash-shell → switch_freeform&#xa;hsrp       → switch_freeform&#xa;udld       → switch_freeform" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#333333;fontSize=10;align=left;" vertex="1" parent="1"><mxGeometry x="720" y="360" width="230" height="250" as="geometry"/></mxCell>
-
-        <!-- Flow -->
-        <mxCell id="s1" value="START" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=12;" vertex="1" parent="1"><mxGeometry x="285" y="80" width="120" height="40" as="geometry"/></mxCell>
-
-        <mxCell id="s2" value="Pre-flight: Verify NDFC reachable" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1"><mxGeometry x="225" y="148" width="240" height="45" as="geometry"/></mxCell>
-
-        <mxCell id="s3" value="Filter inventory: add_to_fabric=true&#xa;→ switches_to_provision" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="225" y="218" width="240" height="50" as="geometry"/></mxCell>
-
-        <mxCell id="s4" value="Load templates/1.2-provision-features-&#xa;feature_lookup.yml&#xa;→ feature_lookup{}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1"><mxGeometry x="210" y="294" width="270" height="60" as="geometry"/></mxCell>
-
-        <mxCell id="s5" value="Find &amp; Load fabrics/*/switch_features.yml&#xa;Build switch_features_lookup{hostname→[features]}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1"><mxGeometry x="210" y="380" width="270" height="55" as="geometry"/></mxCell>
-
-        <mxCell id="s6" value="Build feature_policies[]&#xa;For each switch (has destination_switch_sn):&#xa;  For each feature in switch_features:&#xa;    If feature in feature_lookup:&#xa;      Add {hostname, serial, feature, template_name}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="195" y="465" width="300" height="90" as="geometry"/></mxCell>
-
-        <mxCell id="s7" value="Deduplicate serials → unique_serials[]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="225" y="582" width="240" height="45" as="geometry"/></mxCell>
-
-        <mxCell id="s8" value="GET /control/policies/switches/{serial}&#xa;(per unique serial — loop)&#xa;→ existing_policies_query" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1"><mxGeometry x="220" y="652" width="250" height="65" as="geometry"/></mxCell>
-
-        <mxCell id="s9" value="Build existing_policies_lookup{serial→[keys]}:&#xa;• Normal template: key = templateName&#xa;• switch_freeform: key = 'switch_freeform:' + description&#xa;  (description = 'feature_&lt;name&gt;' for idempotency)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="190" y="744" width="310" height="80" as="geometry"/></mxCell>
-
-        <mxCell id="s10" value="Filter: exclude already-configured policies&#xa;• switch_freeform: check 'switch_freeform:feature_X'&#xa;• others: check templateName&#xa;→ feature_policies_filtered[]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="195" y="850" width="300" height="80" as="geometry"/></mxCell>
-
-        <mxCell id="sdec1" value="filtered list&#xa;empty?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1"><mxGeometry x="275" y="960" width="140" height="65" as="geometry"/></mxCell>
-
-        <mxCell id="skip1" value="Skip (all already configured)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#333333;fontSize=10;fontStyle=2;" vertex="1" parent="1"><mxGeometry x="560" y="975" width="180" height="40" as="geometry"/></mxCell>
-
-        <mxCell id="s11" value="POST /control/policies/bulk-create&#xa;Template: 1.2-provision-features.j2&#xa;Vars: serial_number, template_name, feature&#xa;Payload: {templateName, serialNumber,&#xa;  description: 'feature_&lt;name&gt;' (freeform),&#xa;  nvPairs: {CONF: 'feature &lt;name&gt;'} (freeform)&#xa;  or nvPairs: {} (mapped template)}&#xa;(per policy — loop)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="1"><mxGeometry x="200" y="1062" width="290" height="120" as="geometry"/></mxCell>
-
-        <mxCell id="s12" value="Display results:&#xa;Already existed (skipped): N&#xa;- hostname/feature: SUCCESS/FAILED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="225" y="1208" width="240" height="60" as="geometry"/></mxCell>
-
-        <mxCell id="s99" value="END" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=12;" vertex="1" parent="1"><mxGeometry x="285" y="1295" width="120" height="40" as="geometry"/></mxCell>
-
-        <!-- EDGES -->
-        <mxCell id="e1" edge="1" source="s1" target="s2" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e2" edge="1" source="s2" target="s3" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e3" edge="1" source="s3" target="s4" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e4" edge="1" source="s4" target="s5" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e5" edge="1" source="s5" target="s6" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e6" edge="1" source="s6" target="s7" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e7" edge="1" source="s7" target="s8" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e8" edge="1" source="s8" target="s9" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e9" edge="1" source="s9" target="s10" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e10" edge="1" source="s10" target="sdec1" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e11" value="Yes" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="sdec1" target="skip1" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e12" value="No" edge="1" source="sdec1" target="s11" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e13" edge="1" source="s11" target="s12" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e14" edge="1" source="s12" target="s99" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e15" style="exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="skip1" target="s12" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-
-        <!-- Idempotency note -->
-        <mxCell id="n1" value="Idempotency Keys:&#xa;• Native templates: templateName&#xa;• switch_freeform: 'switch_freeform:' + description&#xa;  (description set to 'feature_&lt;name&gt;')" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffcc;strokeColor=#999900;fontSize=10;fontStyle=2;" vertex="1" parent="1"><mxGeometry x="550" y="750" width="270" height="70" as="geometry"/></mxCell>
-
+        <mxCell id="t1" value="1.2 — Provision Features" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=18;fontStyle=1;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="30" y="10" width="500" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="t2" value="Hosts: nexus_dashboard | Template: 1.2-provision-features.j2 | Policy: feature template or switch_freeform" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=2;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="30" y="44" width="620" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="lg1" value="Process" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="870" y="80" width="100" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="lg2" value="Decision" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="870" y="115" width="100" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="lg3" value="Load Data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="870" y="160" width="100" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="lg4" value="GET API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="870" y="195" width="100" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="lg5" value="POST API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=9;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="870" y="230" width="100" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="lg6" value="Display" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="870" y="265" width="100" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="fl1" value="feature_lookup.yml Mappings&#xa;━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━&#xa;tacacs+   → switch_tacacs&#xa;nxapi      → switch_nxapi&#xa;interface-vlan→ int_vlan_mgmt&#xa;lacp       → switch_lacp&#xa;lldp       → switch_lldp&#xa;bfd        → switch_bfd&#xa;bgp        → switch_bgp&#xa;dhcp       → switch_dhcp&#xa;ospf       → switch_ospf&#xa;vpc        → switch_vpc&#xa;bash-shell → switch_freeform&#xa;hsrp       → switch_freeform&#xa;udld       → switch_freeform" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#333333;fontSize=10;align=left;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="720" y="360" width="230" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="s1" value="START" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=12;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="285" y="80" width="120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" value="Pre-flight: Verify NDFC reachable" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="225" y="148" width="240" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="Filter inventory: add_to_fabric=true&#xa;→ switches_to_provision" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="225" y="218" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s4" value="Load templates/1.2-provision-features-&#xa;feature_lookup.yml&#xa;→ feature_lookup{}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="210" y="294" width="270" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s5" value="Find &amp;amp; Load fabrics/*/switch_features.yml&#xa;Build switch_features_lookup{hostname→[features]}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="210" y="380" width="270" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="s6" value="Build feature_policies[]&#xa;For each switch (has destination_switch_sn):&#xa;  For each feature in switch_features:&#xa;    If feature in feature_lookup:&#xa;      Add {hostname, serial, feature, template_name}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="195" y="465" width="300" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="s7" value="Deduplicate serials → unique_serials[]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="225" y="582" width="240" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="s8" value="GET /control/policies/switches/{serial}&#xa;(per unique serial — loop)&#xa;→ existing_policies_query" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="220" y="652" width="250" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="s9" value="Build existing_policies_lookup{serial→[keys]}:&#xa;• Normal template: key = templateName&#xa;• switch_freeform: key = &#39;switch_freeform:&#39; + description&#xa;  (description = &#39;feature_&#39; for idempotency)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="190" y="744" width="310" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s10" value="Filter: exclude already-configured policies&#xa;• switch_freeform: check &#39;switch_freeform:feature_X&#39;&#xa;• others: check templateName&#xa;→ feature_policies_filtered[]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="195" y="850" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="sdec1" value="filtered list&#xa;empty?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="275" y="960" width="140" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="skip1" value="Skip (all already configured)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#333333;fontSize=10;fontStyle=2;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="560" y="975" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="s11" value="POST /control/policies/bulk-create&#xa;Template: 1.2-provision-features.j2&#xa;Vars: serial_number, template_name, feature&#xa;Payload: {templateName, serialNumber,&#xa;  description: &#39;feature_&#39; (freeform),&#xa;  nvPairs: {CONF: &#39;feature &#39;} (freeform)&#xa;  or nvPairs: {} (mapped template)}&#xa;(per policy — loop)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="200" y="1062" width="290" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="s12" value="Display results:&#xa;Already existed (skipped): N&#xa;- hostname/feature: SUCCESS/FAILED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="225" y="1208" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s99" value="END" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=12;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="285" y="1295" width="120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" style="fontColor=#000000;" parent="1" source="s1" target="s2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="fontColor=#000000;" parent="1" source="s2" target="s3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="fontColor=#000000;" parent="1" source="s3" target="s4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="fontColor=#000000;" parent="1" source="s4" target="s5" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="fontColor=#000000;" parent="1" source="s5" target="s6" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="fontColor=#000000;" parent="1" source="s6" target="s7" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" style="fontColor=#000000;" parent="1" source="s7" target="s8" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" style="fontColor=#000000;" parent="1" source="s8" target="s9" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" style="fontColor=#000000;" parent="1" source="s9" target="s10" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" style="fontColor=#000000;" parent="1" source="s10" target="sdec1" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" value="Yes" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontColor=#000000;" parent="1" source="sdec1" target="skip1" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" value="No" style="fontColor=#000000;" parent="1" source="sdec1" target="s11" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" style="fontColor=#000000;" parent="1" source="s11" target="s12" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" style="fontColor=#000000;" parent="1" source="s12" target="s99" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" style="exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontColor=#000000;" parent="1" source="skip1" target="s12" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n1" value="Idempotency Keys:&#xa;• Native templates: templateName&#xa;• switch_freeform: &#39;switch_freeform:&#39; + description&#xa;  (description set to &#39;feature_&#39;)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffcc;strokeColor=#999900;fontSize=10;fontStyle=2;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="550" y="750" width="270" height="70" as="geometry" />
+        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>

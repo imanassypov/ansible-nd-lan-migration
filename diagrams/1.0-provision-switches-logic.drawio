@@ -1,128 +1,189 @@
-<mxfile host="Electron" version="24.0.0">
+<mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/24.7.8 Chrome/128.0.6613.36 Electron/32.0.1 Safari/537.36" version="24.7.8">
   <diagram name="1.0 - Provision Switches" id="d1-provision-switches">
-    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="2000" math="0" shadow="0">
+    <mxGraphModel dx="1242" dy="769" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="2000" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-
-        <!-- TITLE -->
-        <mxCell id="t1" value="1.0 — Pre-provision / Discover Switches" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;overflow=hidden;fontSize=18;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="30" y="10" width="600" height="40" as="geometry"/></mxCell>
-        <mxCell id="t2" value="Hosts: nexus_dashboard | Connection: httpapi | Collection: cisco.nd" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=2;" vertex="1" parent="1"><mxGeometry x="30" y="46" width="500" height="20" as="geometry"/></mxCell>
-
-        <!-- LEGEND -->
-        <mxCell id="lg0" value="Legend" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=11;" vertex="1" parent="1"><mxGeometry x="1050" y="80" width="80" height="20" as="geometry"/></mxCell>
-        <mxCell id="lg1" value="Start / End" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" vertex="1" parent="1"><mxGeometry x="1050" y="105" width="110" height="30" as="geometry"/></mxCell>
-        <mxCell id="lg2" value="Process / Logic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1"><mxGeometry x="1050" y="145" width="110" height="30" as="geometry"/></mxCell>
-        <mxCell id="lg3" value="Decision" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1"><mxGeometry x="1050" y="185" width="110" height="40" as="geometry"/></mxCell>
-        <mxCell id="lg4" value="Load Data / File" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1"><mxGeometry x="1050" y="235" width="110" height="30" as="geometry"/></mxCell>
-        <mxCell id="lg5" value="GET API Call" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1"><mxGeometry x="1050" y="275" width="110" height="30" as="geometry"/></mxCell>
-        <mxCell id="lg6" value="POST API Call" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="1"><mxGeometry x="1050" y="315" width="110" height="30" as="geometry"/></mxCell>
-        <mxCell id="lg7" value="Display / Output" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1"><mxGeometry x="1050" y="355" width="110" height="30" as="geometry"/></mxCell>
-
-        <!-- ═══ MAIN FLOW ═══ -->
-        <!-- START -->
-        <mxCell id="s1" value="START" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=12;" vertex="1" parent="1"><mxGeometry x="395" y="80" width="120" height="40" as="geometry"/></mxCell>
-
-        <!-- Pre-flight -->
-        <mxCell id="s2" value="Pre-flight: Verify NDFC reachable&#xa;GET /fabrics (preflight check)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1"><mxGeometry x="315" y="150" width="280" height="50" as="geometry"/></mxCell>
-
-        <!-- Build switches list -->
-        <mxCell id="s3" value="Filter inventory: switches where&#xa;add_to_fabric = true&#xa;→ switches_to_preprovision" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="315" y="230" width="280" height="60" as="geometry"/></mxCell>
-
-        <!-- Early load switch_details -->
-        <mxCell id="s4" value="Load fabrics/*/switch_details.yml&#xa;(early — for workflow classification)&#xa;Build switch_details_by_ip lookup" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1"><mxGeometry x="315" y="320" width="280" height="60" as="geometry"/></mxCell>
-
-        <!-- Classify -->
-        <mxCell id="s5" value="Classify each switch:&#xa;Compare destination_switch_sn&#xa;vs switch_details.serial_number" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="315" y="410" width="280" height="60" as="geometry"/></mxCell>
-
-        <!-- Decision diamond -->
-        <mxCell id="s6" value="Serial mismatch&#xa;AND model+version&#xa;defined?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1"><mxGeometry x="345" y="500" width="220" height="90" as="geometry"/></mxCell>
-
-        <!-- ═══ POAP BRANCH (left) ═══ -->
-        <mxCell id="lb1" value="POAP PRE-PROVISIONING WORKFLOW" style="text;html=1;strokeColor=none;fillColor=#fff2cc;align=center;verticalAlign=middle;whiteSpace=wrap;overflow=hidden;fontSize=10;fontStyle=3;" vertex="1" parent="1"><mxGeometry x="30" y="475" width="220" height="25" as="geometry"/></mxCell>
-
-        <mxCell id="p1" value="Load static_routes.yml&#xa;Load l3_interfaces.yml&#xa;(gateway + prefix info)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1"><mxGeometry x="30" y="510" width="220" height="60" as="geometry"/></mxCell>
-
-        <mxCell id="p2" value="Build preprovision_profiles&#xa;{hostname, SN, model, version,&#xa;ip_address, role, gateway}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1"><mxGeometry x="30" y="590" width="220" height="60" as="geometry"/></mxCell>
-
-        <mxCell id="p3" value="Group POAP profiles by fabric&#xa;→ preprovision_by_fabric" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1"><mxGeometry x="30" y="670" width="220" height="50" as="geometry"/></mxCell>
-
-        <mxCell id="p4" value="GET /fabrics/{fabric}/inventory&#xa;(query existing switch serials)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1"><mxGeometry x="30" y="740" width="220" height="50" as="geometry"/></mxCell>
-
-        <mxCell id="p5" value="Filter: exclude switches whose&#xa;serial already exists in NDFC&#xa;→ preprovision_by_fabric_filtered" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1"><mxGeometry x="30" y="810" width="220" height="60" as="geometry"/></mxCell>
-
-        <mxCell id="p6" value="POST /fabrics/{fabric}/inventory/poap&#xa;Payload: 1.0-provision-switches-poap.j2&#xa;{SN, model, version, hostname, IP,&#xa; password, gateway, role}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="1"><mxGeometry x="30" y="900" width="220" height="75" as="geometry"/></mxCell>
-
-        <mxCell id="p7" value="Build POAP hostnames list&#xa;(excluded from role assignment&#xa;— role set during POAP)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1"><mxGeometry x="30" y="995" width="220" height="60" as="geometry"/></mxCell>
-
-        <!-- ═══ DISCOVERY BRANCH (right) ═══ -->
-        <mxCell id="rb1" value="DISCOVERY WORKFLOW" style="text;html=1;strokeColor=none;fillColor=#d5e8d4;align=center;verticalAlign=middle;whiteSpace=wrap;overflow=hidden;fontSize=10;fontStyle=3;" vertex="1" parent="1"><mxGeometry x="660" y="475" width="220" height="25" as="geometry"/></mxCell>
-
-        <mxCell id="d1" value="Load full switch_details.yml&#xa;Build switch_details_lookup (by IP)&#xa;Build discovery_profiles" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1"><mxGeometry x="660" y="510" width="220" height="60" as="geometry"/></mxCell>
-
-        <mxCell id="d2" value="Group discovery profiles by fabric&#xa;→ discovery_by_fabric" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1"><mxGeometry x="660" y="590" width="220" height="50" as="geometry"/></mxCell>
-
-        <mxCell id="d3" value="GET /fabrics/{fabric}/inventory&#xa;(query existing managed IPs)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1"><mxGeometry x="660" y="660" width="220" height="50" as="geometry"/></mxCell>
-
-        <mxCell id="d4" value="Filter: exclude IPs already&#xa;managed in NDFC&#xa;→ discovery_by_fabric_filtered" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1"><mxGeometry x="660" y="730" width="220" height="60" as="geometry"/></mxCell>
-
-        <mxCell id="d5" value="POST /manage/fabrics/{fabric}/switches&#xa;Payload: snmpV3, username/password,&#xa;preserveConfig, switches[]&#xa;Timeout: 300s" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="1"><mxGeometry x="660" y="820" width="220" height="75" as="geometry"/></mxCell>
-
-        <!-- ═══ SHARED: ROLE ASSIGNMENT ═══ -->
-        <mxCell id="r1" value="Build switch_role_assignments&#xa;• POAP: use destination_switch_sn&#xa;• Discovery: use switch_details.license_hostid" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="295" y="1110" width="320" height="65" as="geometry"/></mxCell>
-
-        <mxCell id="r2" value="Group role assignments by fabric&#xa;→ roles_by_fabric" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="315" y="1205" width="280" height="50" as="geometry"/></mxCell>
-
-        <mxCell id="r3" value="POST /control/switches/roles&#xa;Payload: [{role, serialNumber}, ...]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="1"><mxGeometry x="315" y="1285" width="280" height="50" as="geometry"/></mxCell>
-
-        <mxCell id="r4" value="Display role assignment results&#xa;(SUCCESS per fabric)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="315" y="1365" width="280" height="50" as="geometry"/></mxCell>
-
-        <!-- END -->
-        <mxCell id="s99" value="END" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=12;" vertex="1" parent="1"><mxGeometry x="395" y="1445" width="120" height="40" as="geometry"/></mxCell>
-
-        <!-- ═══ EDGES — MAIN FLOW ═══ -->
-        <mxCell id="e1" edge="1" source="s1" target="s2" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e2" edge="1" source="s2" target="s3" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e3" edge="1" source="s3" target="s4" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e4" edge="1" source="s4" target="s5" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e5" edge="1" source="s5" target="s6" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-
-        <!-- Decision → POAP branch -->
-        <mxCell id="e6" value="Yes (POAP)" style="edgeStyle=orthogonalEdgeStyle;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="s6" target="p1" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-
-        <!-- Decision → Discovery branch -->
-        <mxCell id="e7" value="No (Discovery)" style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="s6" target="d1" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-
-        <!-- POAP chain -->
-        <mxCell id="e8" edge="1" source="p1" target="p2" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e9" edge="1" source="p2" target="p3" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e10" edge="1" source="p3" target="p4" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e11" edge="1" source="p4" target="p5" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e12" edge="1" source="p5" target="p6" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e13" edge="1" source="p6" target="p7" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <!-- POAP → Role Assignment -->
-        <mxCell id="e14" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="p7" target="r1" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-
-        <!-- Discovery chain -->
-        <mxCell id="e15" edge="1" source="d1" target="d2" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e16" edge="1" source="d2" target="d3" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e17" edge="1" source="d3" target="d4" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e18" edge="1" source="d4" target="d5" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <!-- Discovery → Role Assignment -->
-        <mxCell id="e19" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="d5" target="r1" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-
-        <!-- Role assignment chain -->
-        <mxCell id="e20" edge="1" source="r1" target="r2" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e21" edge="1" source="r2" target="r3" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e22" edge="1" source="r3" target="r4" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e23" edge="1" source="r4" target="s99" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-
-        <!-- Note: both paths can run in same playbook -->
-        <mxCell id="ann1" value="Note: Both POAP and Discovery&#xa;branches may execute in a&#xa;single playbook run depending&#xa;on which switches are in inventory" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffcc;strokeColor=#999900;fontSize=10;fontStyle=2;" vertex="1" parent="1"><mxGeometry x="315" y="490" width="200" height="80" as="geometry"/></mxCell>
-
-        <!-- API Endpoints Reference Box -->
-        <mxCell id="ref1" value="API Endpoints&#xa;POAP: POST /lan-fabric/rest/control/fabrics/{fabric}/inventory/poap&#xa;Discovery: POST /api/v1/manage/fabrics/{fabric}/switches&#xa;Query: GET /lan-fabric/rest/control/fabrics/{fabric}/inventory&#xa;Roles: POST /lan-fabric/rest/control/switches/roles" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#333333;fontSize=10;align=left;" vertex="1" parent="1"><mxGeometry x="30" y="1110" width="240" height="90" as="geometry"/></mxCell>
-
+        <mxCell id="t1" value="1.0 — Pre-provision / Discover Switches" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;overflow=hidden;fontSize=18;fontStyle=1;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="30" y="10" width="600" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t2" value="Hosts: nexus_dashboard | Connection: httpapi | Collection: cisco.nd" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=2;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="30" y="46" width="500" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lg0" value="Legend" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="1050" y="80" width="80" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lg1" value="Start / End" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="1050" y="105" width="110" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="lg2" value="Process / Logic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="1050" y="145" width="110" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="lg3" value="Decision" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="1050" y="185" width="110" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="lg4" value="Load Data / File" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="1050" y="235" width="110" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="lg5" value="GET API Call" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="1050" y="275" width="110" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="lg6" value="POST API Call" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="1050" y="315" width="110" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="lg7" value="Display / Output" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="1050" y="355" width="110" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="s1" value="START" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=12;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="395" y="80" width="120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" value="Pre-flight: Verify NDFC reachable&#xa;GET /fabrics (preflight check)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="315" y="150" width="280" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="Filter inventory: switches where&#xa;add_to_fabric = true&#xa;→ switches_to_preprovision" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="315" y="230" width="280" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s4" value="Load fabrics/*/switch_details.yml&#xa;(early — for workflow classification)&#xa;Build switch_details_by_ip lookup" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="315" y="320" width="280" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s5" value="Classify each switch:&#xa;Compare destination_switch_sn&#xa;vs switch_details.serial_number" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="315" y="410" width="280" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s6" value="Serial mismatch&#xa;AND model+version&#xa;defined?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="345" y="500" width="220" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="lb1" value="POAP PRE-PROVISIONING WORKFLOW" style="text;html=1;strokeColor=none;fillColor=#fff2cc;align=center;verticalAlign=middle;whiteSpace=wrap;overflow=hidden;fontSize=10;fontStyle=3;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="30" y="475" width="220" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="p1" value="Load static_routes.yml&#xa;Load l3_interfaces.yml&#xa;(gateway + prefix info)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="30" y="510" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" value="Build preprovision_profiles&#xa;{hostname, SN, model, version,&#xa;ip_address, role, gateway}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="30" y="590" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p3" value="Group POAP profiles by fabric&#xa;→ preprovision_by_fabric" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="30" y="670" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p4" value="GET /fabrics/{fabric}/inventory&#xa;(query existing switch serials)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="30" y="740" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p5" value="Filter: exclude switches whose&#xa;serial already exists in NDFC&#xa;→ preprovision_by_fabric_filtered" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="30" y="810" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p6" value="POST /fabrics/{fabric}/inventory/poap&#xa;Payload: 1.0-provision-switches-poap.j2&#xa;{SN, model, version, hostname, IP,&#xa; password, gateway, role}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="30" y="900" width="220" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="p7" value="Build POAP hostnames list&#xa;(excluded from role assignment&#xa;— role set during POAP)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="30" y="995" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="rb1" value="DISCOVERY WORKFLOW" style="text;html=1;strokeColor=none;fillColor=#d5e8d4;align=center;verticalAlign=middle;whiteSpace=wrap;overflow=hidden;fontSize=10;fontStyle=3;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="660" y="475" width="220" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="d1" value="Load full switch_details.yml&#xa;Build switch_details_lookup (by IP)&#xa;Build discovery_profiles" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="660" y="510" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="d2" value="Group discovery profiles by fabric&#xa;→ discovery_by_fabric" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="660" y="590" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="d3" value="GET /fabrics/{fabric}/inventory&#xa;(query existing managed IPs)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="660" y="660" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="d4" value="Filter: exclude IPs already&#xa;managed in NDFC&#xa;→ discovery_by_fabric_filtered" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="660" y="730" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="d5" value="POST /manage/fabrics/{fabric}/switches&#xa;Payload: snmpV3, username/password,&#xa;preserveConfig, switches[]&#xa;Timeout: 300s" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="660" y="820" width="220" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="r1" value="Build switch_role_assignments&#xa;• POAP: use destination_switch_sn&#xa;• Discovery: use switch_details.license_hostid" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="295" y="1110" width="320" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="r2" value="Group role assignments by fabric&#xa;→ roles_by_fabric" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="315" y="1205" width="280" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="r3" value="POST /control/switches/roles&#xa;Payload: [{role, serialNumber}, ...]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="315" y="1285" width="280" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="r4" value="Display role assignment results&#xa;(SUCCESS per fabric)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="315" y="1365" width="280" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s99" value="END" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=12;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="395" y="1445" width="120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" style="fontColor=#000000;" parent="1" source="s1" target="s2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="fontColor=#000000;" parent="1" source="s2" target="s3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="fontColor=#000000;" parent="1" source="s3" target="s4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="fontColor=#000000;" parent="1" source="s4" target="s5" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="fontColor=#000000;" parent="1" source="s5" target="s6" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="Yes (POAP)" style="edgeStyle=orthogonalEdgeStyle;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontColor=#000000;" parent="1" source="s6" target="p1" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="No (Discovery)" style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontColor=#000000;" parent="1" source="s6" target="d1" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" style="fontColor=#000000;" parent="1" source="p1" target="p2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" style="fontColor=#000000;" parent="1" source="p2" target="p3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" style="fontColor=#000000;" parent="1" source="p3" target="p4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" style="fontColor=#000000;" parent="1" source="p4" target="p5" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" style="fontColor=#000000;" parent="1" source="p5" target="p6" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" style="fontColor=#000000;" parent="1" source="p6" target="p7" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontColor=#000000;" parent="1" source="p7" target="r1" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" style="fontColor=#000000;" parent="1" source="d1" target="d2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e16" style="fontColor=#000000;" parent="1" source="d2" target="d3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e17" style="fontColor=#000000;" parent="1" source="d3" target="d4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e18" style="fontColor=#000000;" parent="1" source="d4" target="d5" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e19" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontColor=#000000;" parent="1" source="d5" target="r1" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e20" style="fontColor=#000000;" parent="1" source="r1" target="r2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e21" style="fontColor=#000000;" parent="1" source="r2" target="r3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e22" style="fontColor=#000000;" parent="1" source="r3" target="r4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e23" style="fontColor=#000000;" parent="1" source="r4" target="s99" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ann1" value="Note: Both POAP and Discovery&#xa;branches may execute in a&#xa;single playbook run depending&#xa;on which switches are in inventory" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffcc;strokeColor=#999900;fontSize=10;fontStyle=2;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="365" y="600" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ref1" value="API Endpoints&#xa;POAP: POST /lan-fabric/rest/control/fabrics/{fabric}/inventory/poap&#xa;Discovery: POST /api/v1/manage/fabrics/{fabric}/switches&#xa;Query: GET /lan-fabric/rest/control/fabrics/{fabric}/inventory&#xa;Roles: POST /lan-fabric/rest/control/switches/roles" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#333333;fontSize=10;align=left;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="30" y="1110" width="240" height="90" as="geometry" />
+        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>

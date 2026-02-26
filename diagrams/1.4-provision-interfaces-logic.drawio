@@ -1,106 +1,171 @@
-<mxfile host="Electron" version="24.0.0">
+<mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/24.7.8 Chrome/128.0.6613.36 Electron/32.0.1 Safari/537.36" version="24.7.8">
   <diagram name="1.4 - Provision Interfaces" id="d1-4-interfaces">
-    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="2200" math="0" shadow="0">
+    <mxGraphModel dx="1242" dy="769" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="2200" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-
-        <!-- TITLE -->
-        <mxCell id="t1" value="1.4 — Provision Interfaces" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=18;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="30" y="10" width="500" height="36" as="geometry"/></mxCell>
-        <mxCell id="t2" value="Hosts: nexus_dashboard | Modules: cisco.dcnm.dcnm_interface (L2/VPC), cisco.nd.nd_rest (SVI) | 3 Plays" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=2;" vertex="1" parent="1"><mxGeometry x="30" y="44" width="700" height="18" as="geometry"/></mxCell>
-
-        <!-- LEGEND -->
-        <mxCell id="lg0" value="Legend" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=11;" vertex="1" parent="1"><mxGeometry x="1100" y="80" width="80" height="20" as="geometry"/></mxCell>
-        <mxCell id="lg1" value="Process" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="1"><mxGeometry x="1100" y="105" width="115" height="25" as="geometry"/></mxCell>
-        <mxCell id="lg2" value="Decision" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1"><mxGeometry x="1100" y="140" width="115" height="35" as="geometry"/></mxCell>
-        <mxCell id="lg3" value="Load Data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1"><mxGeometry x="1100" y="185" width="115" height="25" as="geometry"/></mxCell>
-        <mxCell id="lg4" value="GET API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1"><mxGeometry x="1100" y="220" width="115" height="25" as="geometry"/></mxCell>
-        <mxCell id="lg5" value="PUT/POST API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=9;" vertex="1" parent="1"><mxGeometry x="1100" y="255" width="115" height="25" as="geometry"/></mxCell>
-        <mxCell id="lg6" value="Display" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1"><mxGeometry x="1100" y="290" width="115" height="25" as="geometry"/></mxCell>
-
-        <!-- Tags reference -->
-        <mxCell id="tags" value="Tags (run individual plays):&#xa;--tags deploy-l2-interfaces&#xa;--tags deploy-vpc-interfaces&#xa;--tags deploy-svi-interfaces" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#333333;fontSize=10;align=left;" vertex="1" parent="1"><mxGeometry x="1100" y="340" width="200" height="80" as="geometry"/></mxCell>
-
-        <!-- PLAY 1: L2 Interfaces -->
-        <mxCell id="play1hdr" value="PLAY 1 — Layer 2 Interfaces (Ethernet + Port-channels)&#xa;Tag: deploy-l2-interfaces | Module: cisco.dcnm.dcnm_interface" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=12;" vertex="1" parent="1"><mxGeometry x="30" y="80" width="600" height="50" as="geometry"/></mxCell>
-
-        <mxCell id="p1s1" value="Pre-flight: Verify NDFC reachable" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1"><mxGeometry x="195" y="158" width="280" height="45" as="geometry"/></mxCell>
-
-        <mxCell id="p1s2" value="Filter inventory: add_to_fabric=true&#xa;→ switches_to_provision" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="195" y="225" width="280" height="50" as="geometry"/></mxCell>
-
-        <mxCell id="p1s3" value="Find &amp; Load fabrics/*/l2_interfaces.yml&#xa;Build data_&lt;fabric&gt; namespace vars&#xa;Merge into l2_interface_inventory[]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1"><mxGeometry x="185" y="300" width="300" height="65" as="geometry"/></mxCell>
-
-        <mxCell id="p1s4" value="Build eth_interface_list[] (Ethernet)&#xa;Build pc_interface_list[] (Port-channel)&#xa;Keyed by switch hostname + serial&#xa;Templates: 1.4-provision-interfaces-eth.j2&#xa;           1.4-provision-interfaces-pc.j2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="175" y="390" width="320" height="90" as="geometry"/></mxCell>
-
-        <mxCell id="p1s5" value="cisco.dcnm.dcnm_interface&#xa;state: replaced&#xa;config: eth_interface_list + pc_interface_list&#xa;deploy: true&#xa;(idempotent — creates/updates/deploys)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="1"><mxGeometry x="185" y="504" width="300" height="80" as="geometry"/></mxCell>
-
-        <mxCell id="p1s6" value="Display L2 deployment result" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="225" y="608" width="220" height="45" as="geometry"/></mxCell>
-
-        <!-- PLAY 2: VPC Interfaces -->
-        <mxCell id="play2hdr" value="PLAY 2 — VPC Interfaces&#xa;Tag: deploy-vpc-interfaces | Module: cisco.dcnm.dcnm_interface" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=12;" vertex="1" parent="1"><mxGeometry x="30" y="690" width="600" height="50" as="geometry"/></mxCell>
-
-        <mxCell id="p2s1" value="Pre-flight: Verify NDFC reachable" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1"><mxGeometry x="195" y="760" width="280" height="45" as="geometry"/></mxCell>
-
-        <mxCell id="p2s2" value="Filter inventory: add_to_fabric=true&#xa;→ switches_to_provision" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="195" y="826" width="280" height="50" as="geometry"/></mxCell>
-
-        <mxCell id="p2s3" value="Find &amp; Load fabrics/*/l2_vpc_interfaces.yml&#xa;Build vpc_interface_inventory[]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1"><mxGeometry x="195" y="896" width="280" height="55" as="geometry"/></mxCell>
-
-        <mxCell id="p2s4" value="Build vpc_interface_list[]&#xa;Template: 1.4-provision-interfaces-vpc.j2&#xa;Name format: vpc{id} (e.g. vpc113)&#xa;Note: VPC ID=1 skipped (reserved for peer-link)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="185" y="973" width="300" height="80" as="geometry"/></mxCell>
-
-        <mxCell id="p2s5" value="cisco.dcnm.dcnm_interface&#xa;state: replaced (aggregation/POAP)&#xa;       merged  (access/discovered)&#xa;config: vpc_interface_list&#xa;deploy: true (aggregation only)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="1"><mxGeometry x="185" y="1074" width="300" height="80" as="geometry"/></mxCell>
-
-        <mxCell id="p2s6" value="Display VPC interface deployment result" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="205" y="1178" width="260" height="45" as="geometry"/></mxCell>
-
-        <!-- PLAY 3: SVI Interfaces -->
-        <mxCell id="play3hdr" value="PLAY 3 — SVI (VLAN) Interfaces with HSRP&#xa;Tag: deploy-svi-interfaces | Module: cisco.nd.nd_rest (REST API)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=12;" vertex="1" parent="1"><mxGeometry x="30" y="1260" width="640" height="50" as="geometry"/></mxCell>
-
-        <mxCell id="p3s1" value="Pre-flight: Verify NDFC reachable" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1"><mxGeometry x="195" y="1330" width="280" height="45" as="geometry"/></mxCell>
-
-        <mxCell id="p3s2" value="Find &amp; Load fabrics/*/l3_interfaces.yml&#xa;Find &amp; Load fabrics/*/switch_details.yml&#xa;Build svi_interface_inventory[] and switch serials" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1"><mxGeometry x="185" y="1396" width="300" height="65" as="geometry"/></mxCell>
-
-        <mxCell id="p3s3" value="Separate switches into:&#xa;• AGG (aggregation/existing): deploy=true&#xa;• ACCESS/POAP: deploy=false (skipped)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="195" y="1484" width="280" height="65" as="geometry"/></mxCell>
-
-        <mxCell id="p3s4" value="Build SVI config from l3_interfaces.yml:&#xa;• IP address, prefix, description&#xa;• HSRP: group, version, VIP, priority, preempt&#xa;• HSRP timers (hello_interval, hold_time, msec)&#xa;• OSPF routing, DHCP relay (freeform CONF)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="175" y="1572" width="320" height="90" as="geometry"/></mxCell>
-
-        <mxCell id="p3s5" value="cisco.nd.nd_rest [AGG switches only]&#xa;PUT /control/policies/interfaces/{policyId}/switches&#xa;Template: 1.4-provision-interfaces-svi-rest.j2&#xa;(Full HSRP/OSPF/DHCP support via int_vlan policy)&#xa;deploy: true" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="1"><mxGeometry x="185" y="1684" width="300" height="90" as="geometry"/></mxCell>
-
-        <mxCell id="p3s6" value="cisco.nd.nd_rest [ACCESS/POAP switches]&#xa;POST /control/policies/interfaces&#xa;Template: 1.4-provision-interfaces-svi-rest.j2&#xa;deploy: false (policies apply post-bootstrap)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="1"><mxGeometry x="650" y="1684" width="300" height="90" as="geometry"/></mxCell>
-
-        <mxCell id="p3s7" value="Display SVI deployment results&#xa;AGG: deployed | ACCESS: staged for bootstrap" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="195" y="1808" width="300" height="50" as="geometry"/></mxCell>
-
-        <mxCell id="s99" value="END" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=12;" vertex="1" parent="1"><mxGeometry x="295" y="1884" width="120" height="40" as="geometry"/></mxCell>
-
-        <!-- PLAY 1 EDGES -->
-        <mxCell id="e1" edge="1" source="p1s1" target="p1s2" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e2" edge="1" source="p1s2" target="p1s3" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e3" edge="1" source="p1s3" target="p1s4" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e4" edge="1" source="p1s4" target="p1s5" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e5" edge="1" source="p1s5" target="p1s6" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-
-        <!-- PLAY 2 EDGES -->
-        <mxCell id="e6" edge="1" source="p2s1" target="p2s2" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e7" edge="1" source="p2s2" target="p2s3" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e8" edge="1" source="p2s3" target="p2s4" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e9" edge="1" source="p2s4" target="p2s5" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e10" edge="1" source="p2s5" target="p2s6" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-
-        <!-- PLAY 3 EDGES -->
-        <mxCell id="e11" edge="1" source="p3s1" target="p3s2" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e12" edge="1" source="p3s2" target="p3s3" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e13" edge="1" source="p3s3" target="p3s4" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e14" edge="1" source="p3s4" target="p3s5" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e14b" value="AGG switches" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="p3s3" target="p3s6" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e15" edge="1" source="p3s5" target="p3s7" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e15b" style="exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0;entryDx=0;entryDy=0;" edge="1" source="p3s6" target="p3s7" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e16" edge="1" source="p3s7" target="s99" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-
-        <!-- Play-to-Play flow connectors -->
-        <mxCell id="ep1p2" value="Play 2 starts independently" style="dashed=1;endArrow=open;endFill=0;strokeColor=#666666;" edge="1" source="p1s6" target="play2hdr" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="ep2p3" value="Play 3 starts independently" style="dashed=1;endArrow=open;endFill=0;strokeColor=#666666;" edge="1" source="p2s6" target="play3hdr" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-
-        <!-- Interface naming note -->
-        <mxCell id="n1" value="Interface Naming Transforms:&#xa;port-channel113 → vpc113 (VPC format)&#xa;Ethernet1/4 → e1/4 (dcnm_interface format)&#xa;VPC ID=1 always skipped (reserved for peer-link)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffcc;strokeColor=#999900;fontSize=10;fontStyle=2;" vertex="1" parent="1"><mxGeometry x="700" y="900" width="280" height="75" as="geometry"/></mxCell>
-
+        <mxCell id="t1" value="1.4 — Provision Interfaces" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=18;fontStyle=1;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="30" y="10" width="500" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="t2" value="Hosts: nexus_dashboard | Modules: cisco.dcnm.dcnm_interface (L2/VPC), cisco.nd.nd_rest (SVI) | 3 Plays" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=2;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="30" y="44" width="700" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="lg0" value="Legend" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="1100" y="80" width="80" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lg1" value="Process" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="1100" y="105" width="115" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="lg2" value="Decision" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="1100" y="140" width="115" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="lg3" value="Load Data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="1100" y="185" width="115" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="lg4" value="GET API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="1100" y="220" width="115" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="lg5" value="PUT/POST API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=9;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="1100" y="255" width="115" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="lg6" value="Display" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="1100" y="290" width="115" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="tags" value="Tags (run individual plays):&#xa;--tags deploy-l2-interfaces&#xa;--tags deploy-vpc-interfaces&#xa;--tags deploy-svi-interfaces" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#333333;fontSize=10;align=left;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="1100" y="340" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="play1hdr" value="PLAY 1 — Layer 2 Interfaces (Ethernet + Port-channels)&#xa;Tag: deploy-l2-interfaces | Module: cisco.dcnm.dcnm_interface" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=12;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="30" y="80" width="600" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p1s1" value="Pre-flight: Verify NDFC reachable" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="195" y="158" width="280" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="p1s2" value="Filter inventory: add_to_fabric=true&#xa;→ switches_to_provision" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="195" y="225" width="280" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p1s3" value="Find &amp;amp; Load fabrics/*/l2_interfaces.yml&#xa;Build data_ namespace vars&#xa;Merge into l2_interface_inventory[]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="185" y="300" width="300" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="p1s4" value="Build eth_interface_list[] (Ethernet)&#xa;Build pc_interface_list[] (Port-channel)&#xa;Keyed by switch hostname + serial&#xa;Templates: 1.4-provision-interfaces-eth.j2&#xa;           1.4-provision-interfaces-pc.j2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="175" y="390" width="320" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p1s5" value="cisco.dcnm.dcnm_interface&#xa;state: replaced&#xa;config: eth_interface_list + pc_interface_list&#xa;deploy: true&#xa;(idempotent — creates/updates/deploys)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="185" y="504" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p1s6" value="Display L2 deployment result" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="225" y="608" width="220" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="play2hdr" value="PLAY 2 — VPC Interfaces&#xa;Tag: deploy-vpc-interfaces | Module: cisco.dcnm.dcnm_interface" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=12;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="30" y="690" width="600" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p2s1" value="Pre-flight: Verify NDFC reachable" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="195" y="760" width="280" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="p2s2" value="Filter inventory: add_to_fabric=true&#xa;→ switches_to_provision" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="195" y="826" width="280" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p2s3" value="Find &amp;amp; Load fabrics/*/l2_vpc_interfaces.yml&#xa;Build vpc_interface_inventory[]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="195" y="896" width="280" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="p2s4" value="Build vpc_interface_list[]&#xa;Template: 1.4-provision-interfaces-vpc.j2&#xa;Name format: vpc{id} (e.g. vpc113)&#xa;Note: VPC ID=1 skipped (reserved for peer-link)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="185" y="973" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p2s5" value="cisco.dcnm.dcnm_interface&#xa;state: replaced (aggregation/POAP)&#xa;       merged  (access/discovered)&#xa;config: vpc_interface_list&#xa;deploy: true (aggregation only)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="185" y="1074" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p2s6" value="Display VPC interface deployment result" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="205" y="1178" width="260" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="play3hdr" value="PLAY 3 — SVI (VLAN) Interfaces with HSRP&#xa;Tag: deploy-svi-interfaces | Module: cisco.nd.nd_rest (REST API)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=12;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="30" y="1260" width="640" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p3s1" value="Pre-flight: Verify NDFC reachable" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="195" y="1330" width="280" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="p3s2" value="Find &amp;amp; Load fabrics/*/l3_interfaces.yml&#xa;Find &amp;amp; Load fabrics/*/switch_details.yml&#xa;Build svi_interface_inventory[] and switch serials" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="185" y="1396" width="300" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="p3s3" value="Separate switches into:&#xa;• AGG (aggregation/existing): deploy=true&#xa;• ACCESS/POAP: deploy=false (skipped)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="195" y="1484" width="280" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="p3s4" value="Build SVI config from l3_interfaces.yml:&#xa;• IP address, prefix, description&#xa;• HSRP: group, version, VIP, priority, preempt&#xa;• HSRP timers (hello_interval, hold_time, msec)&#xa;• OSPF routing, DHCP relay (freeform CONF)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="175" y="1572" width="320" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p3s5" value="cisco.nd.nd_rest [AGG switches only]&#xa;PUT /control/policies/interfaces/{policyId}/switches&#xa;Template: 1.4-provision-interfaces-svi-rest.j2&#xa;(Full HSRP/OSPF/DHCP support via int_vlan policy)&#xa;deploy: true" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="185" y="1684" width="300" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p3s6" value="cisco.nd.nd_rest [ACCESS/POAP switches]&#xa;POST /control/policies/interfaces&#xa;Template: 1.4-provision-interfaces-svi-rest.j2&#xa;deploy: false (policies apply post-bootstrap)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="650" y="1684" width="300" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p3s7" value="Display SVI deployment results&#xa;AGG: deployed | ACCESS: staged for bootstrap" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="195" y="1808" width="300" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s99" value="END" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=12;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="295" y="1884" width="120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" style="fontColor=#000000;" parent="1" source="p1s1" target="p1s2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="fontColor=#000000;" parent="1" source="p1s2" target="p1s3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="fontColor=#000000;" parent="1" source="p1s3" target="p1s4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="fontColor=#000000;" parent="1" source="p1s4" target="p1s5" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="fontColor=#000000;" parent="1" source="p1s5" target="p1s6" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="fontColor=#000000;" parent="1" source="p2s1" target="p2s2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" style="fontColor=#000000;" parent="1" source="p2s2" target="p2s3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" style="fontColor=#000000;" parent="1" source="p2s3" target="p2s4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" style="fontColor=#000000;" parent="1" source="p2s4" target="p2s5" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" style="fontColor=#000000;" parent="1" source="p2s5" target="p2s6" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" style="fontColor=#000000;" parent="1" source="p3s1" target="p3s2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" style="fontColor=#000000;" parent="1" source="p3s2" target="p3s3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" style="fontColor=#000000;" parent="1" source="p3s3" target="p3s4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" style="fontColor=#000000;" parent="1" source="p3s4" target="p3s5" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14b" value="AGG switches" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontColor=#000000;" parent="1" source="p3s3" target="p3s6" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" style="fontColor=#000000;" parent="1" source="p3s5" target="p3s7" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15b" style="exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0;entryDx=0;entryDy=0;fontColor=#000000;" parent="1" source="p3s6" target="p3s7" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e16" style="fontColor=#000000;" parent="1" source="p3s7" target="s99" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ep1p2" value="Play 2 starts independently" style="dashed=1;endArrow=open;endFill=0;strokeColor=#666666;fontColor=#000000;" parent="1" source="p1s6" target="play2hdr" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ep2p3" value="Play 3 starts independently" style="dashed=1;endArrow=open;endFill=0;strokeColor=#666666;fontColor=#000000;" parent="1" source="p2s6" target="play3hdr" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n1" value="Interface Naming Transforms:&#xa;port-channel113 → vpc113 (VPC format)&#xa;Ethernet1/4 → e1/4 (dcnm_interface format)&#xa;VPC ID=1 always skipped (reserved for peer-link)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffcc;strokeColor=#999900;fontSize=10;fontStyle=2;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="700" y="900" width="280" height="75" as="geometry" />
+        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
