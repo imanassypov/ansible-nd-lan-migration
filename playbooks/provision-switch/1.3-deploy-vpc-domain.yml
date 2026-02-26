@@ -201,17 +201,16 @@
     # This task is expected to fail, but the POLICY element gets successfully created and 
     # attached to the VPC switch pair
     - name: Create VPC pairs via REST API
-      cisco.nd.nd_rest:
-        host: "{{ ansible_host }}"
-        username: "{{ ansible_user }}"
-        password: "{{ ansible_password }}"
-        use_ssl: "{{ ansible_httpapi_use_ssl }}"
-        validate_certs: "{{ ansible_httpapi_validate_certs }}"
-        use_proxy: "{{ ansible_httpapi_use_proxy }}"
-        login_domain: "{{ ansible_httpapi_login_domain }}"
+      cisco.dcnm.dcnm_rest:
         path: "{{ vpc_api_path }}"
         method: POST
-        content: "{{ lookup('template', playbook_dir + '/../../templates/1.3-deploy-vpc-domain.j2') }}"
+        # dcnm_rest internally calls json.loads(json_data) - json_data must be a JSON string.
+        # ansible-core 2.17 may auto-parse the template output to a native Python dict
+        # (type="raw" does not prevent this). The conditional re-serializes it to a
+        # JSON string if that happens.
+        json_data: "{{ _payload | to_json if _payload is mapping else _payload }}"
+      vars:
+        _payload: "{{ lookup('template', playbook_dir + '/../../templates/1.3-deploy-vpc-domain.j2') }}"
       loop: "{{ vpc_domains_resolved | default([]) }}"
       loop_control:
         label: "Domain {{ item.DOMAIN_ID }}: {{ item.PEER1_NAME }} <-> {{ item.PEER2_NAME }}"
