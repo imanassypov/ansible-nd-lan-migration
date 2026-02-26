@@ -15,7 +15,7 @@ For switches **not yet powered on**, identified by having `destination_switch_sn
 
 | Stage | Playbook | What Happens |
 |-------|----------|--------------|
-| **Pre-provision** | `1.0-provision-switches.yml` (tag: `preprovision-switches`) | Registers the switch serial number, model, IP, role, and gateway with NDFC via `POST .../inventory/poap` — creating a placeholder *before* the switch boots. |
+| **Pre-provision** | `1.0-provision-switches.yml` (tag: `preprovision-switches`) | Registers the switch serial number, model, IP, role, and gateway with NDFC using `cisco.dcnm.dcnm_inventory` POAP payloads — creating a placeholder *before* the switch boots. |
 | **Configure** | `1.1` – `1.6` | Provisions features, VPC domains, interfaces, VLANs, and default routes in NDFC so policies are ready ahead of time. |
 | **Wait for POAP** | `1.7-check-poap-status.yml` | Polls the POAP inventory to confirm the physical switch has booted and contacted NDFC. |
 | **Bootstrap** | `1.8-bootstrap-switches.yml` | Re-POSTs to the POAP API with `"reAdd": true`, pushing the switch's SSH fingerprint, public key, and Day-0 CLI config (port-channels, member interfaces) to complete onboarding. |
@@ -27,8 +27,7 @@ For switches **already online and reachable via SSH**, identified by the *absenc
 | Stage | Playbook | What Happens |
 |-------|----------|--------------|
 | **Profile** | `discovery/1.0-profile-existing-switches.yml` | SSHes into each switch to extract running configs into `fabrics/<fabric>/*.yml`. |
-| **Discover** | `1.0-provision-switches.yml` (tag: `discover-switches`) | Imports the switch into NDFC via `POST /api/v1/manage/fabrics/{fabric}/switches` using SSH credentials with `preserveConfig: true`. |
-| **Assign Role** | Same playbook, post-discovery | Sets each switch's role (access, aggregation) via `POST .../switches/roles`. |
+| **Discover + Assign Role** | `1.0-provision-switches.yml` (tag: `discover-switches`) | Imports switches and assigns roles in one module workflow via `cisco.dcnm.dcnm_inventory` using SSH credentials with `preserve_config: true`. |
 | **Configure** | `1.1` – `1.6` | Applies the same feature, interface, VLAN, and routing policies as the greenfield path. |
 
 ### How the Decision Is Made
@@ -137,7 +136,7 @@ Run playbooks individually in sequence (1.0 → 1.8). For POAP workflows, run 1.
 
 | # | Playbook | Template(s) | Description |
 |---|----------|-------------|-------------|
-| 1.0 | `provision-switches.yml` | Inline Jinja2 | Adds switches to NDFC (see [How Switches Are Added](#how-switches-are-added-to-ndfc) below) |
+| 1.0 | `provision-switches.yml` | Inline Jinja2 | Adds switches to NDFC using `cisco.dcnm.dcnm_inventory` (POAP pre-provision + discovery/role merge) |
 | 1.1 | `create-discovery-user.yml` | `1.1-create-discovery-user.j2` | Create NDFC discovery user (switch_user policy) for switch authentication during discovery |
 | 1.2 | `provision-features.yml` | `1.2-provision-features.j2` | Configure NX-OS feature policies (LACP, LLDP, interface-vlan, etc.) using 1.2-provision-features-feature_lookup.yml mapping |
 | 1.3 | `deploy-vpc-domain.yml` | `1.3-deploy-vpc-domain.json.j2` | Deploy VPC domain configuration between aggregation switch pairs |
@@ -206,7 +205,7 @@ The `1.0-provision-switches.yml` playbook automatically determines how to add ea
 
 | Playbook | Template(s) | Description |
 |----------|-------------|-------------|
-| `1.0-configure-nd-fabric.yml` | `02-configure-nd-fabric.json.j2` | Create and configure fabric definitions in NDFC |
+| `1.0-configure-nd-fabric.yml` | — | Create and update fabric definitions in NDFC using `cisco.dcnm.dcnm_fabric` |
 
 ---
 
@@ -223,8 +222,8 @@ ansible-playbook playbooks/provision-switch/0.0-full-provision-switch.yml -v
 ### Step-by-Step Execution
 
 ```bash
-# 1.0 - Pre-provision switches with NDFC
-ansible-playbook playbooks/provision-switch/1.0-preprovision-new-switches.yml
+# 1.0 - Pre-provision/discover switches with NDFC
+ansible-playbook playbooks/provision-switch/1.0-provision-switches.yml
 
 # 1.1 - Create discovery user for NDFC authentication
 ansible-playbook playbooks/provision-switch/1.1-create-discovery-user.yml
@@ -387,6 +386,7 @@ Already configured (skipped): 5
 - Uses `cisco.nd` collection
 - Credentials: `vault_nd_password`
 - Timeout: 1000 seconds
+- Shared preflight check uses `cisco.nd.nd_version` to validate ND reachability/version before provisioning tasks
 
 ---
 
@@ -566,7 +566,7 @@ interface Vlan199
 
 ```bash
 # Dry-run mode
-ansible-playbook playbooks/provision-switch/1.0-preprovision-new-switches.yml --check
+ansible-playbook playbooks/provision-switch/1.0-provision-switches.yml --check
 
 # Verbose output
 ansible-playbook playbooks/provision-switch/0.0-full-provision-switch.yml -vvv
@@ -655,7 +655,7 @@ Complete list of NDFC REST API endpoints used by this project:
 |----------|--------|-------------|---------|
 | `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{fabric}/inventory` | GET | 1.0 | Query existing switches in fabric |
 | `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{fabric}/inventory/poap` | GET | 1.8, 1.9 | Query POAP inventory for connected switches |
-| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{fabric}/inventory/poap` | POST | 1.0, 1.9 | Pre-provision switch / Bootstrap switch via POAP |
+| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{fabric}/inventory/poap` | POST | 1.9 | Bootstrap switch via POAP |
 | `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/switches/{serial}` | GET | 1.1, 1.2, 1.5, 1.7 | Query existing policies for a switch (idempotency check) |
 | `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create` | POST | 1.1, 1.2, 1.5, 1.7 | Create switch policies (features, VLANs, routes, users) |
 | `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/vpcpair` | GET | 1.3 | Query existing VPC pairs |

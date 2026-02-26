@@ -1,6 +1,6 @@
 ---
 # Playbook: 1.0-preprovision-new-switches.yml
-# Purpose: Pre-provision new switches to NDFC via POAP API or discover existing switches
+# Purpose: Pre-provision new switches or discover existing switches in NDFC
 #
 # Description:
 #   This playbook adds switches to Nexus Dashboard Fabric Controller by:
@@ -29,13 +29,8 @@
 # Variables from l3_interfaces.yml:
 #   - switches.<hostname>.interfaces: L3 interface configurations with IP addresses
 #
-# API Endpoints Used:
-#   - POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/<fabric>/inventory/poap (POAP)
-#   - POST /api/v1/manage/fabrics/<fabric>/switches (Discovery)
-#
-# Templates Used:
-#   - 1.0-provision-switches-poap.j2: POAP pre-provisioning JSON payload
-#   - 1.0-provision-switches-discovery.j2: Switch discovery JSON payload
+# Module Used:
+#   - cisco.dcnm.dcnm_inventory: Inventory merge for POAP pre-provisioning and switch discovery
 #
 # Tags:
 #   - preprovision-switches: Run only switch pre-provisioning tasks
@@ -309,116 +304,77 @@
         - switches_to_preprovision | length > 0
         - preprovision_profiles | length > 0
 
-    # Query existing pre-provisioned switches to make playbook idempotent
-    - name: Query existing switches in each fabric
-      cisco.nd.nd_rest:
-        host: "{{ ansible_host }}"
-        username: "{{ ansible_user }}"
-        password: "{{ ansible_ssh_pass }}"
-        use_ssl: "{{ ansible_httpapi_use_ssl }}"
-        validate_certs: "{{ ansible_httpapi_validate_certs }}"
-        use_proxy: "{{ ansible_httpapi_use_proxy }}"
-        login_domain: "{{ ansible_httpapi_login_domain }}"
-        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{{ item }}/inventory"
-        method: GET
-      loop: "{{ preprovision_by_fabric.keys() | list }}"
-      loop_control:
-        label: "{{ item }}"
+    - name: Build POAP inventory payloads for dcnm_inventory
+      ansible.builtin.set_fact:
+        poap_inventory_by_fabric: |
+          {%- set by_fabric = {} -%}
+          {%- for fabric, switches in preprovision_by_fabric.items() -%}
+            {%- set entries = [] -%}
+            {%- for sw in switches -%}
+              {%- set poap_entry = {
+                'seed_ip': sw.ip_address,
+                'user_name': 'admin',
+                'password': nd_switch_password,
+                'role': sw.role,
+                'poap': [{
+                  'preprovision_serial': sw.serial_number,
+                  'model': sw.model,
+                  'version': sw.version,
+                  'hostname': sw.hostname,
+                  'discovery_username': vault_nd_discovery_user | default(''),
+                  'discovery_password': vault_nd_discovery_password | default(''),
+                  'config_data': {
+                    'modulesModel': [sw.model],
+                    'gateway': sw.gateway
+                  }
+                }]
+              } -%}
+              {%- set _ = entries.append(poap_entry) -%}
+            {%- endfor -%}
+            {%- if entries | length > 0 -%}
+              {%- set _ = by_fabric.update({fabric: entries}) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ by_fabric }}
       when:
         - preprovision_by_fabric is defined
         - preprovision_by_fabric | length > 0
-      register: existing_switches_query
 
-    - name: Build set of existing switch serial numbers
-      ansible.builtin.set_fact:
-        existing_switch_serials: |
-          {%- set serials = [] -%}
-          {%- for result in existing_switches_query.results | default([]) -%}
-            {%- if result.current is defined and result.current is iterable -%}
-              {%- for switch in result.current -%}
-                {%- if switch.serialNumber is defined -%}
-                  {%- set _ = serials.append(switch.serialNumber) -%}
-                {%- endif -%}
-              {%- endfor -%}
-            {%- endif -%}
-          {%- endfor -%}
-          {{ serials }}
-      when: existing_switches_query is defined
-
-    - name: Filter out already pre-provisioned switches
-      ansible.builtin.set_fact:
-        preprovision_by_fabric_filtered: |
-          {%- set filtered = {} -%}
-          {%- for fabric, switches in preprovision_by_fabric.items() -%}
-            {%- set new_switches = [] -%}
-            {%- for sw in switches -%}
-              {%- if sw.serial_number not in existing_switch_serials -%}
-                {%- set _ = new_switches.append(sw) -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {%- if new_switches | length > 0 -%}
-              {%- set _ = filtered.update({fabric: new_switches}) -%}
-            {%- endif -%}
-          {%- endfor -%}
-          {{ filtered }}
-      when: preprovision_by_fabric is defined
-
-    - name: Display switches to pre-provision (after filtering existing)
+    - name: Display switches to pre-provision
       ansible.builtin.debug:
         msg: |
-          Switches to pre-provision (excluding existing): {{ preprovision_by_fabric_filtered | dict2items | map(attribute='value') | flatten | length }}
-          Already pre-provisioned: {{ existing_switch_serials | length }}
-          {% for fabric, switches in preprovision_by_fabric_filtered.items() %}
-          - {{ fabric }}: {% for sw in switches %}{{ sw.hostname }}{% if not loop.last %}, {% endif %}{% endfor %}
+          Switches to pre-provision: {{ poap_inventory_by_fabric | dict2items | map(attribute='value') | flatten | length }}
+          {% for fabric, switches in poap_inventory_by_fabric.items() %}
+          - {{ fabric }}: {% for sw in switches %}{{ sw.poap[0].hostname }}{% if not loop.last %}, {% endif %}{% endfor %}
           {% endfor %}
-      when: preprovision_by_fabric_filtered is defined
+      when: poap_inventory_by_fabric is defined
 
-    # Pre-provision switches to NDFC via POAP API
-    # Uses template: templates/1.0-provision-switches-poap.j2
-    - name: Pre-provision switches to NDFC
-      cisco.nd.nd_rest:
-        host: "{{ ansible_host }}"
-        username: "{{ ansible_user }}"
-        password: "{{ ansible_ssh_pass }}"
-        use_ssl: "{{ ansible_httpapi_use_ssl }}"
-        validate_certs: "{{ ansible_httpapi_validate_certs }}"
-        use_proxy: "{{ ansible_httpapi_use_proxy }}"
-        login_domain: "{{ ansible_httpapi_login_domain }}"
-        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{{ item.key }}/inventory/poap"
-        method: POST
-        content: >-
-          [{% for switch in item.value %}{
-            "serialNumber": "{{ switch.serial_number }}",
-            "model": "{{ switch.model }}",
-            "version": "{{ switch.version }}",
-            "hostname": "{{ switch.hostname }}",
-            "ipAddress": "{{ switch.ip_address }}",
-            "password": "{{ nd_switch_password }}",
-            "discoveryAuthProtocol": 0,
-            "data": "{\"modulesModel\": [\"{{ switch.model }}\"], \"gateway\": \"{{ switch.gateway }}\"}",
-            "imagePolicy": "",
-            "role": "{{ switch.role }}"
-          }{% if not loop.last %},{% endif %}{% endfor %}]
-      loop: "{{ preprovision_by_fabric_filtered | dict2items }}"
+    - name: Pre-provision switches to NDFC via dcnm_inventory
+      cisco.dcnm.dcnm_inventory:
+        fabric: "{{ item.key }}"
+        state: merged
+        save: false
+        deploy: false
+        config: "{{ item.value }}"
+      vars:
+        ansible_network_os: cisco.dcnm.dcnm
+      loop: "{{ poap_inventory_by_fabric | default({}) | dict2items }}"
       loop_control:
         label: "{{ item.key }} ({{ item.value | length }} switches)"
       when:
-        - preprovision_by_fabric_filtered is defined
-        - preprovision_by_fabric_filtered | length > 0
+        - poap_inventory_by_fabric is defined
+        - poap_inventory_by_fabric | length > 0
       register: preprovision_results
 
     - name: Display pre-provisioning results
       ansible.builtin.debug:
         msg: |
-          Pre-provisioning complete.
-          Already existed (skipped): {{ existing_switch_serials | length }}
+          Pre-provisioning complete via dcnm_inventory.
           {% for result in preprovision_results.results | default([]) %}
           {% if result.skipped is not defined or not result.skipped %}
           - {{ result.item.key }}: {{ 'SUCCESS' if result.failed is not defined or not result.failed else 'FAILED' }}
-            Switches: {% for sw in result.item.value %}{{ sw.hostname }}{% if not loop.last %}, {% endif %}{% endfor %}
           {% endif %}
           {% endfor %}
-          Template: templates/1.0-provision-switches-poap.j2
       when: preprovision_results is defined
 
     # Capture POAP switch hostnames to exclude from role assignment
@@ -536,122 +492,71 @@
       tags:
         - discover-switches
 
-    # Query existing managed switches to filter out already discovered
-    - name: Query existing managed switches for discovery
-      cisco.nd.nd_rest:
-        host: "{{ ansible_host }}"
-        username: "{{ ansible_user }}"
-        password: "{{ ansible_ssh_pass }}"
-        use_ssl: "{{ ansible_httpapi_use_ssl }}"
-        validate_certs: "{{ ansible_httpapi_validate_certs }}"
-        use_proxy: "{{ ansible_httpapi_use_proxy }}"
-        login_domain: "{{ ansible_httpapi_login_domain }}"
-        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{{ item }}/inventory"
-        method: GET
-      loop: "{{ discovery_by_fabric.keys() | list }}"
-      loop_control:
-        label: "{{ item }}"
+    - name: Build discovery inventory payloads for dcnm_inventory
+      ansible.builtin.set_fact:
+        discovery_inventory_by_fabric: |
+          {%- set by_fabric = {} -%}
+          {%- for fabric, switches in discovery_by_fabric.items() -%}
+            {%- set entries = [] -%}
+            {%- for sw in switches -%}
+              {%- set entry = {
+                'seed_ip': sw.ip_address,
+                'auth_proto': discovery_auth_proto | default('MD5'),
+                'user_name': vault_nd_discovery_user,
+                'password': vault_nd_discovery_password,
+                'max_hops': 0,
+                'role': sw.role,
+                'preserve_config': preserve_config | default(true) | bool
+              } -%}
+              {%- set _ = entries.append(entry) -%}
+            {%- endfor -%}
+            {%- if entries | length > 0 -%}
+              {%- set _ = by_fabric.update({fabric: entries}) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ by_fabric }}
       when:
         - discovery_by_fabric is defined
         - discovery_by_fabric | length > 0
-      register: existing_managed_query
       tags:
         - discover-switches
+        - assign-roles
 
-    - name: Build set of existing managed switch IPs
-      ansible.builtin.set_fact:
-        existing_managed_ips: |
-          {%- set ips = [] -%}
-          {%- for result in existing_managed_query.results | default([]) -%}
-            {%- if result.current is defined and result.current is iterable -%}
-              {%- for switch in result.current -%}
-                {%- if switch.ipAddress is defined -%}
-                  {%- set _ = ips.append(switch.ipAddress) -%}
-                {%- endif -%}
-              {%- endfor -%}
-            {%- endif -%}
-          {%- endfor -%}
-          {{ ips }}
-      when: existing_managed_query is defined
-      tags:
-        - discover-switches
-
-    - name: Filter out already managed switches
-      ansible.builtin.set_fact:
-        discovery_by_fabric_filtered: |
-          {%- set filtered = {} -%}
-          {%- for fabric, switches in discovery_by_fabric.items() -%}
-            {%- set new_switches = [] -%}
-            {%- for sw in switches -%}
-              {%- if sw.ip_address not in existing_managed_ips -%}
-                {%- set _ = new_switches.append(sw) -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {%- if new_switches | length > 0 -%}
-              {%- set _ = filtered.update({fabric: new_switches}) -%}
-            {%- endif -%}
-          {%- endfor -%}
-          {{ filtered }}
-      when: discovery_by_fabric is defined
-      tags:
-        - discover-switches
-
-    - name: Display switches to discover (after filtering existing)
+    - name: Display switches to discover
       ansible.builtin.debug:
         msg: |
           ═══════════════════════════════════════════════════════════════════════
           SWITCH DISCOVERY
           ═══════════════════════════════════════════════════════════════════════
-          Switches to discover (excluding existing): {{ discovery_by_fabric_filtered | dict2items | map(attribute='value') | flatten | length }}
-          Already preprovisioned: {{ existing_managed_ips | default([]) | length }}
-          {% for fabric, switches in discovery_by_fabric_filtered.items() %}
-          - {{ fabric }}: {% for sw in switches %}{{ sw.hostname }} ({{ sw.ip_address }}, SN: {{ sw.serial_number | default('N/A') }}){% if not loop.last %}, {% endif %}{% endfor %}
+          Switches to discover: {{ discovery_inventory_by_fabric | dict2items | map(attribute='value') | flatten | length }}
+          {% for fabric, switches in discovery_inventory_by_fabric.items() %}
+          - {{ fabric }}: {% for sw in switches %}{{ sw.seed_ip }} (role={{ sw.role }}){% if not loop.last %}, {% endif %}{% endfor %}
           {% endfor %}
           ═══════════════════════════════════════════════════════════════════════
-      when: discovery_by_fabric_filtered is defined
+      when: discovery_inventory_by_fabric is defined
       tags:
         - discover-switches
+        - assign-roles
 
-    # Discover switches to NDFC via Manage API
-    # Uses template: templates/1.0-provision-switches-discovery.j2
-    # Note: Discovery is a long-running operation, timeout extended to 300s
-    - name: Discover existing switches to NDFC
-      cisco.nd.nd_rest:
-        host: "{{ ansible_host }}"
-        username: "{{ ansible_user }}"
-        password: "{{ ansible_ssh_pass }}"
-        use_ssl: "{{ ansible_httpapi_use_ssl }}"
-        validate_certs: "{{ ansible_httpapi_validate_certs }}"
-        use_proxy: "{{ ansible_httpapi_use_proxy }}"
-        login_domain: "{{ ansible_httpapi_login_domain }}"
-        timeout: 300
-        path: "/api/v1/manage/fabrics/{{ item.key }}/switches"
-        method: POST
-        content:
-          snmpV3AuthProtocol: "{{ snmp_v3_auth_protocol | default('md5') }}"
-          username: "{{ vault_nd_discovery_user }}"
-          password: "{{ vault_nd_discovery_password }}"
-          preserveConfig: "{{ preserve_config | default(true) | bool }}"
-          useCredentialForWrite: "{{ use_credential_for_write | default(false) | bool }}"
-          switches: >-
-            [{% for sw in item.value %}{
-              "ip": "{{ sw.ip_address }}",
-              "hostname": "{{ sw.hostname }}",
-              "model": "{{ sw.model | default('') }}",
-              "softwareVersion": "{{ sw.software_version | default('') }}",
-              "serialNumber": "{{ sw.serial_number | default('') }}",
-              "vdcId": 0,
-              "vdcMac": ""
-            }{% if not loop.last %},{% endif %}{% endfor %}]
-      loop: "{{ discovery_by_fabric_filtered | dict2items }}"
+    - name: Discover existing switches and assign roles via dcnm_inventory
+      cisco.dcnm.dcnm_inventory:
+        fabric: "{{ item.key }}"
+        state: merged
+        save: false
+        deploy: false
+        config: "{{ item.value }}"
+      vars:
+        ansible_network_os: cisco.dcnm.dcnm
+      loop: "{{ discovery_inventory_by_fabric | default({}) | dict2items }}"
       loop_control:
         label: "{{ item.key }} ({{ item.value | length }} switches)"
       when:
-        - discovery_by_fabric_filtered is defined
-        - discovery_by_fabric_filtered | length > 0
+        - discovery_inventory_by_fabric is defined
+        - discovery_inventory_by_fabric | length > 0
       register: discovery_results
       tags:
         - discover-switches
+        - assign-roles
 
     - name: Display discovery results
       ansible.builtin.debug:
@@ -659,132 +564,13 @@
           ═══════════════════════════════════════════════════════════════════════
           DISCOVERY RESULTS
           ═══════════════════════════════════════════════════════════════════════
-          Already preprovisioned (skipped): {{ existing_managed_ips | default([]) | length }}
           {% for result in discovery_results.results | default([]) %}
           {% if result.skipped is not defined or not result.skipped %}
           - {{ result.item.key }}: {{ 'SUCCESS' if result.failed is not defined or not result.failed else 'FAILED' }}
-            Switches: {% for sw in result.item.value %}{{ sw.hostname }}{% if not loop.last %}, {% endif %}{% endfor %}
           {% endif %}
           {% endfor %}
-          Template: templates/1.0-provision-switches-discovery.j2
           ═══════════════════════════════════════════════════════════════════════
       when: discovery_results is defined
       tags:
         - discover-switches
-
-    #==========================================================================
-    # SWITCH ROLE ASSIGNMENT - Set switch roles based on hosts.yml inventory
-    #==========================================================================
-
-    # Build role assignment list from inventory (hosts.yml)
-    # Serial numbers: use destination_switch_sn for POAP switches, switch_details_lookup for discovered switches
-    - name: Build switch role assignments
-      ansible.builtin.set_fact:
-        switch_role_assignments: |
-          {%- set assignments = [] -%}
-          {%- for switch in switches_to_preprovision | default([]) -%}
-            {%- set hostname = switch.inventory_hostname -%}
-            {%- set ip = switch.ansible_host | default('') -%}
-            {# For pre-provisioned switches, use destination_switch_sn directly #}
-            {%- if switch.destination_switch_sn is defined -%}
-              {%- set serial = switch.destination_switch_sn -%}
-            {%- else -%}
-              {# For discovered switches, look up serial from switch_details #}
-              {%- set details = switch_details_lookup.get(ip, {}) if switch_details_lookup is defined else {} -%}
-              {%- set serial = details.get('license_hostid', '') -%}
-            {%- endif -%}
-            {%- if serial and switch.role is defined -%}
-              {%- set _ = assignments.append({
-                'fabric': switch.fabric | default(''),
-                'hostname': hostname,
-                'ip_address': ip,
-                'serial_number': serial,
-                'role': switch.role
-              }) -%}
-            {%- endif -%}
-          {%- endfor -%}
-          {{ assignments }}
-      when: switches_to_preprovision is defined and switches_to_preprovision | length > 0
-      tags:
         - assign-roles
-        - discover-switches
-
-    # Group role assignments by fabric
-    - name: Group role assignments by fabric
-      ansible.builtin.set_fact:
-        roles_by_fabric: |
-          {%- set by_fabric = {} -%}
-          {%- for sw in switch_role_assignments | default([]) -%}
-            {%- set fabric = sw.fabric -%}
-            {%- if fabric and fabric not in by_fabric -%}
-              {%- set _ = by_fabric.update({fabric: []}) -%}
-            {%- endif -%}
-            {%- if fabric -%}
-              {%- set _ = by_fabric[fabric].append(sw) -%}
-            {%- endif -%}
-          {%- endfor -%}
-          {{ by_fabric }}
-      when: switch_role_assignments is defined and switch_role_assignments | length > 0
-      tags:
-        - assign-roles
-        - discover-switches
-
-    - name: Display switch role assignments
-      ansible.builtin.debug:
-        msg: |
-          ═══════════════════════════════════════════════════════════════════════
-          SWITCH ROLE ASSIGNMENTS
-          ═══════════════════════════════════════════════════════════════════════
-          {% for fabric, switches in roles_by_fabric.items() | default([]) %}
-          {{ fabric }}:
-          {% for sw in switches %}
-            - {{ sw.hostname }} ({{ sw.serial_number }}): {{ sw.role }}
-          {% endfor %}
-          {% endfor %}
-          ═══════════════════════════════════════════════════════════════════════
-      when: roles_by_fabric is defined and roles_by_fabric | length > 0
-      tags:
-        - assign-roles
-        - discover-switches
-
-    # Assign switch roles via NDFC API
-    # API expects array format: [{"role":"aggregation","serialNumber":"..."}]
-    - name: Assign switch roles in NDFC
-      cisco.nd.nd_rest:
-        host: "{{ ansible_host }}"
-        username: "{{ ansible_user }}"
-        password: "{{ ansible_ssh_pass }}"
-        use_ssl: "{{ ansible_httpapi_use_ssl }}"
-        validate_certs: "{{ ansible_httpapi_validate_certs }}"
-        use_proxy: "{{ ansible_httpapi_use_proxy }}"
-        login_domain: "{{ ansible_httpapi_login_domain }}"
-        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/switches/roles"
-        method: POST
-        content: >-
-          [{% for sw in item.value %}{"role":"{{ sw.role }}","serialNumber":"{{ sw.serial_number }}"}{% if not loop.last %},{% endif %}{% endfor %}]
-      loop: "{{ roles_by_fabric | default({}) | dict2items }}"
-      loop_control:
-        label: "{{ item.key }} ({{ item.value | length }} switches)"
-      when:
-        - roles_by_fabric is defined
-        - roles_by_fabric | length > 0
-      register: role_assignment_results
-      tags:
-        - assign-roles
-        - discover-switches
-
-    - name: Display role assignment results
-      ansible.builtin.debug:
-        msg: |
-          ═══════════════════════════════════════════════════════════════════════
-          ROLE ASSIGNMENT RESULTS
-          ═══════════════════════════════════════════════════════════════════════
-          {% for result in role_assignment_results.results | default([]) %}
-          - {{ result.item.key }}: {{ 'SUCCESS' if not result.failed | default(false) else 'FAILED' }}
-            Switches: {% for sw in result.item.value %}{{ sw.hostname }} ({{ sw.role }}){% if not loop.last %}, {% endif %}{% endfor %}
-          {% endfor %}
-          ═══════════════════════════════════════════════════════════════════════
-      when: role_assignment_results is defined
-      tags:
-        - assign-roles
-        - discover-switches
