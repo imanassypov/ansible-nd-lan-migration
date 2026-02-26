@@ -139,7 +139,7 @@ Run playbooks individually in sequence (1.0 → 1.8). For POAP workflows, run 1.
 |---|----------|-------------|-------------|
 | 1.0 | `provision-switches.yml` | Inline Jinja2 | Adds switches to NDFC (see [How Switches Are Added](#how-switches-are-added-to-ndfc) below) |
 | 1.1 | `create-discovery-user.yml` | `1.1-create-discovery-user.j2` | Create NDFC discovery user (switch_user policy) for switch authentication during discovery |
-| 1.2 | `provision-features.yml` | `1.2-provision-features.j2` | Configure NX-OS feature policies (LACP, LLDP, interface-vlan, etc.) using feature_lookup.yml mapping |
+| 1.2 | `provision-features.yml` | `1.2-provision-features.j2` | Configure NX-OS feature policies (LACP, LLDP, interface-vlan, etc.) using 1.2-provision-features-feature_lookup.yml mapping |
 | 1.3 | `deploy-vpc-domain.yml` | `1.3-deploy-vpc-domain.json.j2` | Deploy VPC domain configuration between aggregation switch pairs |
 | 1.4 | `provision-interfaces.yml` | `1.4-provision-interfaces-*.j2` | Configure L2/L3 interfaces (Ethernet, port-channels, VPC, SVI) with trunk/access/routed modes |
 | 1.5 | `provision-vlan-policies.yml` | `1.5-provision-vlan-policies.j2` | Deploy VLAN policies from vlan_database.yml to switches |
@@ -200,7 +200,7 @@ The `1.0-provision-switches.yml` playbook automatically determines how to add ea
 
 | Playbook | Template(s) | Description |
 |----------|-------------|-------------|
-| `1.0-profile-existing-switches.yml` | `switch_features.yml.j2`, `vlan_database.yml.j2`, `interfaces_inventory.j2`, `vpc_inventory.j2`, `static_routes.j2` | Profile existing switches via SSH to extract configurations into YAML files |
+| `1.0-profile-existing-switches.yml` | `1.0-profile-existing-switches-switch_features.j2`, `1.0-profile-existing-switches-vlan_database.j2`, `1.0-profile-existing-switches-interfaces_inventory.j2`, `1.0-profile-existing-switches-vpc_inventory.j2`, `1.0-profile-existing-switches-static_routes.j2` | Profile existing switches via SSH to extract configurations into YAML files |
 
 ### Fabric Provisioning (provision-fabric/)
 
@@ -689,7 +689,7 @@ NDFC policy templates used by this project:
 
 ### C. Feature Lookup Mapping
 
-Mapping of NX-OS features to NDFC template names (from `templates/feature_lookup.yml`):
+Mapping of NX-OS features to NDFC template names (from `templates/1.2-provision-features-feature_lookup.yml`):
 
 | NX-OS Feature | NDFC Template |
 |---------------|---------------|

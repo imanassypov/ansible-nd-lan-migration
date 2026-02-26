@@ -15,3 +15,11 @@ feature_lookup:
   interface-vlan: feature_interface_vlan_11_1
   lacp: feature_lacp
   lldp: feature_lldp
+  bfd: feature_bfd
+  bgp: feature_bgp
+  dhcp: feature_dhcp
+  ospf: feature_ospf
+  vpc: base_feature_vpc
+  bash-shell: switch_freeform
+  hsrp: switch_freeform
+  udld: switch_freeform
