@@ -82,7 +82,13 @@
     #--------------------------------------------------------------------------
     - name: Find switch_details.yml files for workflow classification
       ansible.builtin.find:
-        paths: "{{ fabric_paths }}"
+        paths: >-
+          {{
+            switches_to_preprovision
+            | map(attribute='fabric') | unique
+            | map('regex_replace', '^(.*)$', (fabric_paths_base_dir | default(playbook_dir ~ '/../../fabrics')) ~ '/\1')
+            | list
+          }}
         patterns: "switch_details.yml"
       register: switch_details_files_early
       delegate_to: localhost
@@ -169,10 +175,16 @@
     #--------------------------------------------------------------------------
     - name: Find all static_routes.yml files
       ansible.builtin.find:
-        paths: "{{ fabric_paths }}"
+        paths: >-
+          {{
+            switches_for_poap | default([])
+            | map(attribute='fabric') | unique
+            | map('regex_replace', '^(.*)$', (fabric_paths_base_dir | default(playbook_dir ~ '/../../fabrics')) ~ '/\1')
+            | list
+          }}
         patterns: "static_routes.yml"
       register: static_routes_files
-      when: switches_to_preprovision | length > 0
+      when: switches_for_poap is defined and switches_for_poap | length > 0
 
     - name: Load static routes data from all fabrics
       ansible.builtin.include_vars:
@@ -181,7 +193,7 @@
       loop: "{{ static_routes_files.files | default([]) }}"
       loop_control:
         label: "{{ item.path | dirname | basename }}"
-      when: switches_to_preprovision | length > 0
+      when: switches_for_poap is defined and switches_for_poap | length > 0
 
     - name: Build consolidated static routes lookup
       ansible.builtin.set_fact:
@@ -200,17 +212,23 @@
             {%- endif -%}
           {%- endfor -%}
           {{ lookup }}
-      when: switches_to_preprovision | length > 0
+      when: switches_for_poap is defined and switches_for_poap | length > 0
 
     #--------------------------------------------------------------------------
     # Load L3 interface data for management IP prefix
     #--------------------------------------------------------------------------
     - name: Find all l3_interfaces.yml files
       ansible.builtin.find:
-        paths: "{{ fabric_paths }}"
+        paths: >-
+          {{
+            switches_for_poap | default([])
+            | map(attribute='fabric') | unique
+            | map('regex_replace', '^(.*)$', (fabric_paths_base_dir | default(playbook_dir ~ '/../../fabrics')) ~ '/\1')
+            | list
+          }}
         patterns: "l3_interfaces.yml"
       register: l3_interfaces_files
-      when: switches_to_preprovision | length > 0
+      when: switches_for_poap is defined and switches_for_poap | length > 0
 
     - name: Load L3 interface data from all fabrics
       ansible.builtin.include_vars:
@@ -219,7 +237,7 @@
       loop: "{{ l3_interfaces_files.files | default([]) }}"
       loop_control:
         label: "{{ item.path | dirname | basename }}"
-      when: switches_to_preprovision | length > 0
+      when: switches_for_poap is defined and switches_for_poap | length > 0
 
     - name: Build consolidated L3 interfaces lookup
       ansible.builtin.set_fact:
@@ -238,14 +256,14 @@
             {%- endif -%}
           {%- endfor -%}
           {{ lookup }}
-      when: switches_to_preprovision | length > 0
+      when: switches_for_poap is defined and switches_for_poap | length > 0
 
-    # Build pre-provision profiles for each switch
+    # Build pre-provision profiles for each switch (POAP only - serial mismatch)
     - name: Build pre-provision profiles
       ansible.builtin.set_fact:
         preprovision_profiles: |
           {%- set profiles = [] -%}
-          {%- for switch in switches_to_preprovision -%}
+          {%- for switch in switches_for_poap | default([]) -%}
             {%- set hostname = switch.inventory_hostname -%}
             {%- set mgmt_int = switch.mgmt_int | default('Vlan199') -%}
             {%- if switch.destination_switch_sn is defined and 
@@ -285,7 +303,7 @@
             {%- endif -%}
           {%- endfor -%}
           {{ profiles }}
-      when: switches_to_preprovision | length > 0
+      when: switches_for_poap is defined and switches_for_poap | length > 0
 
     # Group profiles by fabric for batch API calls
     - name: Group pre-provision profiles by fabric
@@ -299,8 +317,8 @@
             {%- set _ = by_fabric[profile.fabric].append(profile) -%}
           {%- endfor -%}
           {{ by_fabric }}
-      when: 
-        - switches_to_preprovision | length > 0
+      when:
+        - switches_for_poap is defined and switches_for_poap | length > 0
         - preprovision_profiles | length > 0
 
     - name: Build POAP inventory payloads for dcnm_inventory
@@ -402,9 +420,22 @@
     #==========================================================================
 
     # Load switch_details.yml to get serial numbers for discovery and role assignment
+    - name: Build fabric paths for discovery (only fabrics containing switches to discover)
+      ansible.builtin.set_fact:
+        discovery_fabric_paths: >-
+          {{
+            switches_for_discovery | default([])
+            | map(attribute='fabric') | unique
+            | map('regex_replace', '^(.*)$', (fabric_paths_base_dir | default(playbook_dir ~ '/../../fabrics')) ~ '/\1')
+            | list
+          }}
+      tags:
+        - discover-switches
+        - assign-roles
+
     - name: Find switch_details.yml files for discovery
       ansible.builtin.find:
-        paths: "{{ fabric_paths }}"
+        paths: "{{ discovery_fabric_paths }}"
         patterns: "switch_details.yml"
       register: switch_details_files
       delegate_to: localhost
@@ -412,7 +443,7 @@
         - discover-switches
         - assign-roles
 
-    - name: Load switch details from all fabrics for discovery
+    - name: Load switch details for discovery
       ansible.builtin.include_vars:
         file: "{{ item.path }}"
         name: "switch_details_{{ item.path | dirname | basename }}"
@@ -473,32 +504,18 @@
       tags:
         - discover-switches
 
-    # Group discovery profiles by fabric
-    - name: Group discovery profiles by fabric
+    # Build flat per-switch discovery payloads (one entry per switch)
+    # Using per-switch calls avoids a dcnm_inventory bug where mixing already-managed
+    # and new switches in the same batch causes new switches to be silently skipped.
+    - name: Build per-switch discovery payloads
       ansible.builtin.set_fact:
-        discovery_by_fabric: |
-          {%- set by_fabric = {} -%}
-          {%- for profile in discovery_profiles -%}
-            {%- if profile.fabric not in by_fabric -%}
-              {%- set _ = by_fabric.update({profile.fabric: []}) -%}
-            {%- endif -%}
-            {%- set _ = by_fabric[profile.fabric].append(profile) -%}
-          {%- endfor -%}
-          {{ by_fabric }}
-      when:
-        - discovery_profiles is defined
-        - discovery_profiles | length > 0
-      tags:
-        - discover-switches
-
-    - name: Build discovery inventory payloads for dcnm_inventory
-      ansible.builtin.set_fact:
-        discovery_inventory_by_fabric: |
-          {%- set by_fabric = {} -%}
-          {%- for fabric, switches in discovery_by_fabric.items() -%}
-            {%- set entries = [] -%}
-            {%- for sw in switches -%}
-              {%- set entry = {
+        discovery_payloads: |
+          {%- set payloads = [] -%}
+          {%- for sw in discovery_profiles | default([]) -%}
+            {%- set entry = {
+              'fabric': sw.fabric,
+              'hostname': sw.hostname,
+              'config': [{
                 'seed_ip': sw.ip_address,
                 'auth_proto': discovery_auth_proto | default('MD5'),
                 'user_name': vault_nd_discovery_user,
@@ -506,17 +523,14 @@
                 'max_hops': 0,
                 'role': sw.role,
                 'preserve_config': preserve_config | default(true) | bool
-              } -%}
-              {%- set _ = entries.append(entry) -%}
-            {%- endfor -%}
-            {%- if entries | length > 0 -%}
-              {%- set _ = by_fabric.update({fabric: entries}) -%}
-            {%- endif -%}
+              }]
+            } -%}
+            {%- set _ = payloads.append(entry) -%}
           {%- endfor -%}
-          {{ by_fabric }}
+          {{ payloads }}
       when:
-        - discovery_by_fabric is defined
-        - discovery_by_fabric | length > 0
+        - discovery_profiles is defined
+        - discovery_profiles | length > 0
       tags:
         - discover-switches
         - assign-roles
@@ -527,31 +541,33 @@
           ═══════════════════════════════════════════════════════════════════════
           SWITCH DISCOVERY
           ═══════════════════════════════════════════════════════════════════════
-          Switches to discover: {{ discovery_inventory_by_fabric | dict2items | map(attribute='value') | flatten | length }}
-          {% for fabric, switches in discovery_inventory_by_fabric.items() %}
-          - {{ fabric }}: {% for sw in switches %}{{ sw.seed_ip }} (role={{ sw.role }}){% if not loop.last %}, {% endif %}{% endfor %}
+          Switches to discover: {{ discovery_payloads | default([]) | length }}
+          {% for sw in discovery_payloads | default([]) %}
+          - {{ sw.fabric }}: {{ sw.hostname }} ({{ sw.config[0].seed_ip }}, role={{ sw.config[0].role }})
           {% endfor %}
           ═══════════════════════════════════════════════════════════════════════
-      when: discovery_inventory_by_fabric is defined
+      when: discovery_payloads is defined
       tags:
         - discover-switches
         - assign-roles
 
     - name: Discover existing switches and assign roles via dcnm_inventory
       cisco.dcnm.dcnm_inventory:
-        fabric: "{{ item.key }}"
+        fabric: "{{ item.fabric }}"
         state: merged
         save: false
         deploy: false
-        config: "{{ item.value }}"
+        config: "{{ item.config }}"
       vars:
         ansible_network_os: cisco.dcnm.dcnm
-      loop: "{{ discovery_inventory_by_fabric | default({}) | dict2items }}"
+        ansible_command_timeout: 1000
+        ansible_connect_timeout: 1000
+      loop: "{{ discovery_payloads | default([]) }}"
       loop_control:
-        label: "{{ item.key }} ({{ item.value | length }} switches)"
+        label: "{{ item.fabric }}/{{ item.hostname }}"
       when:
-        - discovery_inventory_by_fabric is defined
-        - discovery_inventory_by_fabric | length > 0
+        - discovery_payloads is defined
+        - discovery_payloads | length > 0
       register: discovery_results
       tags:
         - discover-switches
@@ -565,7 +581,7 @@
           ═══════════════════════════════════════════════════════════════════════
           {% for result in discovery_results.results | default([]) %}
           {% if result.skipped is not defined or not result.skipped %}
-          - {{ result.item.key }}: {{ 'SUCCESS' if result.failed is not defined or not result.failed else 'FAILED' }}
+          - {{ result.item.fabric }}/{{ result.item.hostname }}: {{ 'SUCCESS' if result.failed is not defined or not result.failed else 'FAILED' }}
           {% endif %}
           {% endfor %}
           ═══════════════════════════════════════════════════════════════════════
