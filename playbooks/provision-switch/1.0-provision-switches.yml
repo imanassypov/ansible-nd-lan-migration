@@ -71,8 +71,7 @@
 
     # Build fabric paths from nd_fabrics for targeted file searches
     - name: Build fabric paths from nd_fabrics
-      ansible.builtin.set_fact:
-        fabric_paths: "{{ nd_fabrics | map(attribute='FABRIC_NAME') | map('regex_replace', '^(.*)$', playbook_dir ~ '/../../fabrics/\\1') | list }}"
+      ansible.builtin.import_tasks: ../common/build-fabric-paths.yml
       when: switches_to_preprovision | length > 0
 
     #--------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 ---
-# Playbook: 1.6-provision-default-route.yml
+# Playbook: 1.6-provision-static-routes.yml
 # Purpose: Configure default static route on pre-provisioned switches via NDFC
 #
 # Description:
@@ -32,8 +32,8 @@
 #   - preprovision-default-route: Run only default route provisioning tasks
 #
 # Example Usage:
-#   ansible-playbook ./playbooks/provision-switch/1.6-provision-default-route.yml
-#   ansible-playbook ./playbooks/provision-switch/1.6-provision-default-route.yml --tags preprovision-default-route
+#   ansible-playbook ./playbooks/provision-switch/1.6-provision-static-routes.yml
+#   ansible-playbook ./playbooks/provision-switch/1.6-provision-static-routes.yml --tags preprovision-default-route
 
 - name: Configure Default Routes on Pre-provisioned Switches
   hosts: nexus_dashboard
@@ -64,8 +64,7 @@
 
     # Build fabric paths from nd_fabrics for targeted file searches
     - name: Build fabric paths from nd_fabrics
-      ansible.builtin.set_fact:
-        fabric_paths: "{{ nd_fabrics | map(attribute='FABRIC_NAME') | map('regex_replace', '^(.*)$', playbook_dir ~ '/../../fabrics/\\1') | list }}"
+      ansible.builtin.import_tasks: ../common/build-fabric-paths.yml
       when: switches_to_provision | length > 0
 
     #--------------------------------------------------------------------------

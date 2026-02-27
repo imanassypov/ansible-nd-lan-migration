@@ -115,7 +115,7 @@ ansible-dc-lan-migration/
 │       ├── 1.3-deploy-vpc-domain.yml
 │       ├── 1.4-provision-interfaces.yml
 │       ├── 1.5-provision-vlan-policies.yml
-│       ├── 1.6-provision-default-route.yml
+│       ├── 1.6-provision-static-routes.yml
 │       ├── 1.7-check-poap-status.yml
 │       └── 1.8-bootstrap-switches.yml
 │
@@ -142,7 +142,7 @@ Run playbooks individually in sequence (1.0 → 1.8). For POAP workflows, run 1.
 | 1.3 | `deploy-vpc-domain.yml` | `1.3-deploy-vpc-domain.json.j2` | Deploy VPC domain configuration between aggregation switch pairs |
 | 1.4 | `provision-interfaces.yml` | `1.4-provision-interfaces-*.j2` | Configure L2/L3 interfaces (Ethernet, port-channels, VPC, SVI) with trunk/access/routed modes |
 | 1.5 | `provision-vlan-policies.yml` | `1.5-provision-vlan-policies.j2` | Deploy VLAN policies from vlan_database.yml to switches |
-| 1.6 | `provision-default-route.yml` | `1.6-provision-default-route.j2` | Configure static default route (0.0.0.0/0) via management gateway |
+| 1.6 | `provision-static-routes.yml` | `1.6-provision-default-route.j2` | Configure static default route (0.0.0.0/0) via management gateway |
 | 1.7 | `check-poap-status.yml` | — | Query POAP inventory to check if switches have connected and are ready for bootstrap |
 | 1.8 | `bootstrap-switches.yml` | `1.8-bootstrap-switches.j2` | Bootstrap pre-provisioned switches via POAP API to deploy Day-0 configuration |
 
@@ -241,7 +241,7 @@ ansible-playbook playbooks/provision-switch/1.4-provision-interfaces.yml
 ansible-playbook playbooks/provision-switch/1.5-provision-vlan-policies.yml
 
 # 1.6 - Configure default route
-ansible-playbook playbooks/provision-switch/1.6-provision-default-route.yml
+ansible-playbook playbooks/provision-switch/1.6-provision-static-routes.yml
 
 # 1.7 - Check if switches connected via POAP
 ansible-playbook playbooks/provision-switch/1.7-check-poap-status.yml
@@ -680,7 +680,7 @@ NDFC policy templates used by this project:
 | `feature_nxapi` | Enable NX-API feature | 1.2-provision-features |
 | `feature_vpc` | Enable VPC feature | 1.2-provision-features |
 | `create_vlan` | Create VLAN | 1.5-provision-vlan-policies |
-| `static_route_v4_v6` | Static route configuration | 1.6-provision-default-route |
+| `static_route_v4_v6` | Static route configuration | 1.6-provision-static-routes |
 | `int_trunk_host` | Ethernet trunk interface | 1.4-provision-interfaces |
 | `int_access_host` | Ethernet access interface | 1.4-provision-interfaces |
 | `int_port_channel_trunk_host` | Port-channel trunk interface | 1.4-provision-interfaces |

@@ -21,7 +21,9 @@
 #   - l3_interfaces.yml: Layer 3 interface configurations
 #   - l2_interfaces.yml: Layer 2 non-VPC interface configurations
 #   - l2_vpc_interfaces.yml: VPC interface configurations (consolidated by vpc_id)
+#   - vrf_database.yml: VRF definitions per switch
 #   - static_routes.yml: Static route configurations per switch
+#   - logging_servers.yml: Syslog server configurations per switch
 #
 # Tags:
 #   - profile-switches: Profile switch hardware and basic info
@@ -29,7 +31,9 @@
 #   - profile-vlans: Discover VLAN configurations
 #   - profile-l3-interfaces: Profile Layer 3 interfaces, HSRP, OSPF
 #   - profile-l2-interfaces: Profile Layer 2 interfaces, port-channels, VPCs
+#   - profile-vrfs: Profile VRF configurations
 #   - profile-static-routes: Profile static routes
+#   - profile-logging: Profile logging server configurations
 #
 # Prerequisites:
 #   - Inventory file (inventory/hosts.yml) with switch definitions
@@ -1003,7 +1007,106 @@
 
 
 #------------------------------------------------------------------------------
-# Play 6: Profile Static Routes
+# Play 6: Profile VRFs
+#------------------------------------------------------------------------------
+# Profiles VRF definitions configured on each switch.
+#
+# Captures:
+#   - VRF name
+#   - Optional description
+#   - Optional route distinguisher (RD)
+#   - Optional VNI
+#
+# Generates: fabrics/<fabric>/vrf_database.yml
+#------------------------------------------------------------------------------
+- name: Profile VRFs
+  hosts: switches
+  gather_facts: false
+
+  tags:
+    - profile-vrfs
+
+  tasks:
+    - name: Get VRF sections from running config
+      cisco.nxos.nxos_command:
+        commands:
+          - "show running-config | section '^vrf context'"
+      register: vrf_config_output
+
+    - name: Parse VRFs from running config
+      ansible.builtin.set_fact:
+        parsed_vrfs: |
+          {%- set vrfs = [] -%}
+          {%- if vrf_config_output.stdout is defined and vrf_config_output.stdout | length > 0 -%}
+            {%- for block in vrf_config_output.stdout[0].split('vrf context ')[1:] -%}
+              {%- set lines = block.split('\n') -%}
+              {%- set vrf_name = lines[0].strip() -%}
+              {%- if vrf_name -%}
+                {%- set vrf_obj = {'name': vrf_name} -%}
+                {%- set description_match = block | regex_findall('(?m)^\\s*description\\s+(.+)$') -%}
+                {%- if description_match | length > 0 -%}
+                  {%- set _ = vrf_obj.update({'description': description_match[0] | trim}) -%}
+                {%- endif -%}
+                {%- set rd_match = block | regex_findall('(?m)^\\s*rd\\s+(\\S+)') -%}
+                {%- if rd_match | length > 0 -%}
+                  {%- set _ = vrf_obj.update({'rd': rd_match[0]}) -%}
+                {%- endif -%}
+                {%- set vni_match = block | regex_findall('(?m)^\\s*vni\\s+(\\S+)') -%}
+                {%- if vni_match | length > 0 -%}
+                  {%- set _ = vrf_obj.update({'vni': vni_match[0]}) -%}
+                {%- endif -%}
+                {%- set _ = vrfs.append(vrf_obj) -%}
+              {%- endif -%}
+            {%- endfor -%}
+          {%- endif -%}
+          {{ vrfs }}
+
+    - name: Build VRF profile for current host
+      ansible.builtin.set_fact:
+        vrf_profile:
+          fabric: "{{ fabric }}"
+          hostname: "{{ inventory_hostname }}"
+          vrfs: "{{ parsed_vrfs | from_yaml }}"
+
+    - name: Aggregate all VRF profiles
+      ansible.builtin.set_fact:
+        all_vrf_profiles: "{{ groups['switches'] | map('extract', hostvars, 'vrf_profile') | select('defined') | list }}"
+      run_once: true
+      delegate_to: localhost
+
+    - name: Build fabric-grouped VRF inventory
+      ansible.builtin.set_fact:
+        vrf_inventory: |
+          {%- set inventory = {} -%}
+          {%- for profile in all_vrf_profiles -%}
+            {%- if profile.fabric not in inventory -%}
+              {%- set _ = inventory.update({profile.fabric: {}}) -%}
+            {%- endif -%}
+            {%- set _ = inventory[profile.fabric].update({
+              profile.hostname: {
+                'vrfs': profile.vrfs | default([])
+              }
+            }) -%}
+          {%- endfor -%}
+          {{ inventory }}
+      run_once: true
+      delegate_to: localhost
+
+    - name: Generate vrf_database.yml for each fabric
+      ansible.builtin.template:
+        src: ../../templates/1.0-profile-existing-switches-vrf_database.j2
+        dest: "../../fabrics/{{ item.key }}/vrf_database.yml"
+      run_once: true
+      delegate_to: localhost
+      loop: "{{ (vrf_inventory | from_yaml) | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      vars:
+        fabric_name: "{{ item.key }}"
+        fabric_vrfs: "{{ item.value }}"
+
+#------------------------------------------------------------------------------
+# Play 7: Profile Static Routes
 #------------------------------------------------------------------------------
 # Profiles all static routes configured on each switch including:
 #   - Default routes (0.0.0.0/0)
@@ -1011,12 +1114,7 @@
 #   - VRF-specific routes
 #   - Routes with track objects
 #
-# Route parsing handles various formats:
-#   - ip route <prefix> <next-hop>
-#   - ip route <prefix> <interface> <next-hop>
-#   - ip route <prefix> <next-hop> name <name>
-#   - ip route <prefix> <next-hop> track <track-id>
-#   - vrf context <vrf> / ip route <prefix> <next-hop>
+# Uses NX-OS resource module in gathered state and normalizes output for inventory.
 #
 # Generates: fabrics/<fabric>/static_routes.yml
 #------------------------------------------------------------------------------
@@ -1028,120 +1126,46 @@
     - profile-static-routes
 
   tasks:
-    # Get all static routes from running configuration
-    - name: Get static routes from running config
-      cisco.nxos.nxos_command:
-        commands:
-          - "show running-config | section '^ip route'"
-      register: static_routes_output
+    - name: Gather static routes
+      cisco.nxos.nxos_static_routes:
+        state: gathered
+      register: static_routes_gathered
 
-    # Get VRF-specific static routes
-    - name: Get VRF contexts with routes
-      cisco.nxos.nxos_command:
-        commands:
-          - "show running-config | section '^vrf context'"
-      register: vrf_routes_output
+    - name: Debug raw static routes gathered payload
+      ansible.builtin.debug:
+        var: static_routes_gathered.gathered
+      tags:
+        - debug-static-routes
 
-    # Parse static routes from running config
-    - name: Parse static routes
+    - name: Normalize static routes
       ansible.builtin.set_fact:
         parsed_static_routes: |
           {%- set routes = [] -%}
-          {# Parse global static routes #}
-          {%- if static_routes_output.stdout is defined and static_routes_output.stdout | length > 0 -%}
-            {%- for line in static_routes_output.stdout[0].split('\n') -%}
-              {%- set trimmed = line | trim -%}
-              {%- if trimmed is search('^ip route ') -%}
-                {%- set parts = trimmed.split() -%}
-                {# Format: ip route <prefix> <next-hop> [name <name>] [track <id>] [tag <tag>] #}
-                {# Or: ip route <prefix> <interface> <next-hop> [name <name>] [track <id>] #}
-                {%- if parts | length >= 4 -%}
-                  {%- set prefix = parts[2] -%}
-                  {%- set next_hop = '' -%}
-                  {%- set interface = '' -%}
-                  {%- set route_name = '' -%}
-                  {%- set track_id = '' -%}
-                  {%- set tag_val = '' -%}
-                  {# Check if parts[3] is an interface (starts with Vlan, Ethernet, port-channel, etc) #}
-                  {%- if parts[3] is search('^(Vlan|Ethernet|port-channel|loopback|Null)', ignorecase=true) -%}
-                    {%- set interface = parts[3] -%}
-                    {%- if parts | length >= 5 -%}
-                      {%- set next_hop = parts[4] -%}
-                    {%- endif -%}
-                  {%- else -%}
-                    {%- set next_hop = parts[3] -%}
-                  {%- endif -%}
-                  {# Parse optional keywords #}
-                  {%- for i in range(4, parts | length) -%}
-                    {%- if parts[i] == 'name' and (i + 1) < parts | length -%}
-                      {%- set route_name = parts[i + 1] -%}
-                    {%- elif parts[i] == 'track' and (i + 1) < parts | length -%}
-                      {%- set track_id = parts[i + 1] -%}
-                    {%- elif parts[i] == 'tag' and (i + 1) < parts | length -%}
-                      {%- set tag_val = parts[i + 1] -%}
-                    {%- endif -%}
-                  {%- endfor -%}
-                  {%- set route = {
-                    'prefix': prefix,
+          {%- for vrf_data in static_routes_gathered.gathered | default([]) -%}
+            {%- set vrf_name = vrf_data.vrf | default('default') -%}
+            {%- for af in vrf_data.address_families | default([]) -%}
+              {%- for route in af.routes | default([]) -%}
+                {%- for nh in route.next_hops | default([]) -%}
+                  {%- set next_hop = nh.forward_router_address | default(nh.next_hop | default('')) -%}
+                  {%- set interface = nh.forward_interface | default(nh.interface | default('')) -%}
+                  {%- set route_name = nh.name | default('') -%}
+                  {%- set track_id = nh.track | default('') -%}
+                  {%- set tag_val = nh.tag | default('') -%}
+                  {%- set route_obj = {
+                    'prefix': route.dest | default(''),
                     'next_hop': next_hop,
                     'interface': interface,
-                    'vrf': '',
+                    'vrf': ('' if vrf_name == 'default' else vrf_name),
+                    'afi': af.afi | default('ipv4'),
                     'name': route_name,
                     'track': track_id,
                     'tag': tag_val
                   } -%}
-                  {%- set _ = routes.append(route) -%}
-                {%- endif -%}
-              {%- endif -%}
+                  {%- set _ = routes.append(route_obj) -%}
+                {%- endfor -%}
+              {%- endfor -%}
             {%- endfor -%}
-          {%- endif -%}
-          {# Parse VRF-specific static routes #}
-          {%- if vrf_routes_output.stdout is defined and vrf_routes_output.stdout | length > 0 -%}
-            {%- set current_vrf = '' -%}
-            {%- for line in vrf_routes_output.stdout[0].split('\n') -%}
-              {%- set trimmed = line | trim -%}
-              {%- if trimmed is search('^vrf context ') -%}
-                {%- set current_vrf = trimmed.split()[2] | default('') -%}
-              {%- elif trimmed is search('^ip route ') and current_vrf -%}
-                {%- set parts = trimmed.split() -%}
-                {%- if parts | length >= 4 -%}
-                  {%- set prefix = parts[2] -%}
-                  {%- set next_hop = '' -%}
-                  {%- set interface = '' -%}
-                  {%- set route_name = '' -%}
-                  {%- set track_id = '' -%}
-                  {%- set tag_val = '' -%}
-                  {%- if parts[3] is search('^(Vlan|Ethernet|port-channel|loopback|Null)', ignorecase=true) -%}
-                    {%- set interface = parts[3] -%}
-                    {%- if parts | length >= 5 -%}
-                      {%- set next_hop = parts[4] -%}
-                    {%- endif -%}
-                  {%- else -%}
-                    {%- set next_hop = parts[3] -%}
-                  {%- endif -%}
-                  {%- for i in range(4, parts | length) -%}
-                    {%- if parts[i] == 'name' and (i + 1) < parts | length -%}
-                      {%- set route_name = parts[i + 1] -%}
-                    {%- elif parts[i] == 'track' and (i + 1) < parts | length -%}
-                      {%- set track_id = parts[i + 1] -%}
-                    {%- elif parts[i] == 'tag' and (i + 1) < parts | length -%}
-                      {%- set tag_val = parts[i + 1] -%}
-                    {%- endif -%}
-                  {%- endfor -%}
-                  {%- set route = {
-                    'prefix': prefix,
-                    'next_hop': next_hop,
-                    'interface': interface,
-                    'vrf': current_vrf,
-                    'name': route_name,
-                    'track': track_id,
-                    'tag': tag_val
-                  } -%}
-                  {%- set _ = routes.append(route) -%}
-                {%- endif -%}
-              {%- endif -%}
-            {%- endfor -%}
-          {%- endif -%}
+          {%- endfor -%}
           {{ routes }}
 
     # Build route profile for current host
@@ -1198,4 +1222,74 @@
       vars:
         fabric_name: "{{ item.key }}"
         fabric_routes: "{{ item.value }}"
+
+#------------------------------------------------------------------------------
+# Play 8: Profile Logging Server Configuration
+#------------------------------------------------------------------------------
+# Profiles syslog server configuration on each switch including:
+#   - Remote logging servers
+#   - Severity levels
+#   - VRF bindings
+#   - Optional facility/port/secure settings
+#
+# Uses NX-OS resource module in gathered state to build structured inventory.
+#
+# Generates: fabrics/<fabric>/logging_servers.yml
+#------------------------------------------------------------------------------
+- name: Profile Logging Server Configuration
+  hosts: switches
+  gather_facts: false
+
+  tags:
+    - profile-logging
+
+  tasks:
+    - name: Gather logging global configuration
+      cisco.nxos.nxos_logging_global:
+        state: gathered
+      register: logging_global_info
+
+    - name: Build logging profile for current host
+      ansible.builtin.set_fact:
+        logging_profile:
+          fabric: "{{ fabric }}"
+          hostname: "{{ inventory_hostname }}"
+          logging_servers: "{{ (logging_global_info.gathered.hosts if (logging_global_info.gathered is defined and logging_global_info.gathered.hosts is defined) else []) }}"
+
+    - name: Aggregate all logging profiles
+      ansible.builtin.set_fact:
+        all_logging_profiles: "{{ groups['switches'] | map('extract', hostvars, 'logging_profile') | select('defined') | list }}"
+      run_once: true
+      delegate_to: localhost
+
+    - name: Build fabric-grouped logging inventory
+      ansible.builtin.set_fact:
+        logging_inventory: |
+          {%- set inventory = {} -%}
+          {%- for profile in all_logging_profiles -%}
+            {%- if profile.fabric not in inventory -%}
+              {%- set _ = inventory.update({profile.fabric: {}}) -%}
+            {%- endif -%}
+            {%- set _ = inventory[profile.fabric].update({
+              profile.hostname: {
+                'logging_servers': profile.logging_servers | default([])
+              }
+            }) -%}
+          {%- endfor -%}
+          {{ inventory }}
+      run_once: true
+      delegate_to: localhost
+
+    - name: Generate logging_servers.yml for each fabric
+      ansible.builtin.template:
+        src: ../../templates/1.0-profile-existing-switches-logging_servers.j2
+        dest: "../../fabrics/{{ item.key }}/logging_servers.yml"
+      run_once: true
+      delegate_to: localhost
+      loop: "{{ (logging_inventory | from_yaml) | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      vars:
+        fabric_name: "{{ item.key }}"
+        fabric_logging: "{{ item.value }}"
 

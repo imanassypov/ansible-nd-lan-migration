@@ -58,6 +58,7 @@ output/
 reports/
 backups/
 configs/
+configs/*
 fabrics/
 source_configs/
 inventory/

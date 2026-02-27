@@ -61,9 +61,28 @@
 
     # Build fabric paths from nd_fabrics for targeted file searches
     - name: Build fabric paths from nd_fabrics
-      ansible.builtin.set_fact:
-        fabric_paths: "{{ nd_fabrics | map(attribute='FABRIC_NAME') | map('regex_replace', '^(.*)$', playbook_dir ~ '/../../fabrics/\\1') | list }}"
+      ansible.builtin.import_tasks: ../common/build-fabric-paths.yml
       when: switches_to_provision | length > 0
+
+    - name: Set target fabrics from switches to provision
+      ansible.builtin.set_fact:
+        target_fabrics: "{{ switches_to_provision | map(attribute='fabric') | select('defined') | list | unique }}"
+      when: switches_to_provision | length > 0
+
+    - name: Build target fabric paths
+      ansible.builtin.set_fact:
+        target_fabric_paths: |
+          {%- set out = [] -%}
+          {%- for path in fabric_paths | default([]) -%}
+            {%- if (path | basename) in (target_fabrics | default([])) -%}
+              {%- set _ = out.append(path) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ out }}
+      when:
+        - switches_to_provision | length > 0
+        - target_fabrics is defined
+        - target_fabrics | length > 0
 
     # Load feature lookup table
     - name: Load feature lookup table
@@ -71,21 +90,59 @@
         file: "{{ playbook_dir }}/../../templates/1.2-provision-features-feature_lookup.yml"
       when: switches_to_provision | length > 0
 
-    # Load switch features from all fabrics
-    - name: Find all switch_features.yml files
+    # Load switch features from target fabric only
+    - name: Find switch_features.yml in target fabric
       ansible.builtin.find:
-        paths: "{{ fabric_paths }}"
+        paths: "{{ target_fabric_paths | default([]) }}"
         patterns: "switch_features.yml"
       register: switch_features_files
-      when: switches_to_provision | length > 0
+      when:
+        - switches_to_provision | length > 0
+        - target_fabric_paths is defined
+        - target_fabric_paths | length > 0
 
-    - name: Load switch features data from all fabrics
+    - name: Load switch features data from target fabric
       ansible.builtin.include_vars:
         file: "{{ item.path }}"
         name: "features_data_{{ item.path | dirname | basename }}"
       loop: "{{ switch_features_files.files | default([]) }}"
       loop_control:
         label: "{{ item.path | dirname | basename }}"
+      when: switch_features_files is defined
+
+    # Load switch_details.yml to resolve serials when destination_switch_sn is absent
+    - name: Find switch_details.yml files in target fabrics
+      ansible.builtin.find:
+        paths: "{{ target_fabric_paths | default([]) }}"
+        patterns: "switch_details.yml"
+      register: switch_details_files
+      when:
+        - switches_to_provision | length > 0
+        - target_fabric_paths is defined
+        - target_fabric_paths | length > 0
+
+    - name: Load switch details from target fabrics
+      ansible.builtin.include_vars:
+        file: "{{ item }}"
+        name: "switch_details_{{ item | dirname | basename | replace('-', '_') }}"
+      loop: "{{ switch_details_files.files | default([]) | map(attribute='path') | list }}"
+      loop_control:
+        label: "{{ item | dirname | basename }}"
+      when: switch_details_files is defined
+
+    - name: Build consolidated switch details lookup (keyed by IP)
+      ansible.builtin.set_fact:
+        switch_details_lookup: |
+          {%- set lookup = {} -%}
+          {%- for var_name in hostvars[inventory_hostname] | select('match', '^switch_details_') -%}
+            {%- set details = hostvars[inventory_hostname][var_name] -%}
+            {%- if details.switches is defined -%}
+              {%- for switch in details.switches -%}
+                {%- set _ = lookup.update({switch.ip_address: switch}) -%}
+              {%- endfor -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ lookup }}
       when: switches_to_provision | length > 0
 
     # Build consolidated switch features lookup
@@ -115,7 +172,11 @@
           {%- set policies = [] -%}
           {%- for switch in switches_to_provision -%}
             {%- set hostname = switch.inventory_hostname -%}
+            {%- set ip = switch.ansible_host | default('') -%}
             {%- set serial = switch.destination_switch_sn | default('') -%}
+            {%- if not serial and switch_details_lookup is defined and ip in switch_details_lookup -%}
+              {%- set serial = switch_details_lookup[ip].license_hostid | default('') -%}
+            {%- endif -%}
             {%- if serial and hostname in switch_features_lookup -%}
               {%- set features = switch_features_lookup[hostname] -%}
               {%- for feature in features -%}
