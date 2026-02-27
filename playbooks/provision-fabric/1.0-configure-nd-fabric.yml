@@ -85,7 +85,7 @@
     #--------------------------------------------------------------------------
     # Enhanced LAN fabrics: create/update via REST API
     #--------------------------------------------------------------------------
-    - name: Query existing enhanced LAN fabrics
+    - name: Query all fabrics from Nexus Dashboard
       cisco.nd.nd_rest:
         host: "{{ ansible_host }}"
         username: "{{ ansible_user }}"
@@ -94,22 +94,17 @@
         validate_certs: "{{ ansible_httpapi_validate_certs }}"
         use_proxy: "{{ ansible_httpapi_use_proxy }}"
         login_domain: "{{ ansible_httpapi_login_domain }}"
-        path: "/api/v1/manage/fabrics/{{ item.FABRIC_NAME }}"
+        path: "/api/v1/manage/fabrics"
         method: GET
-      loop: "{{ enhanced_fabrics }}"
-      loop_control:
-        label: "{{ item.FABRIC_NAME }}"
-      register: enhanced_fabric_query
-      failed_when: status is defined and status | int not in [200, 404]
+      register: all_fabrics_query
       when: enhanced_fabrics | length > 0
 
     - name: Build set of existing enhanced fabric names
       ansible.builtin.set_fact:
         existing_enhanced_fabrics: >-
           {{
-            enhanced_fabric_query.results | default([])
-            | selectattr('status', 'equalto', 200)
-            | map(attribute='item.FABRIC_NAME')
+            all_fabrics_query.current.fabrics | default([])
+            | map(attribute='name')
             | list
           }}
       when: enhanced_fabrics | length > 0
