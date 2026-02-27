@@ -3,16 +3,39 @@
 Template: SVI Interface Configuration for dcnm_interface Module
 ================================================================================
 Purpose:
-  Generate SVI (VLAN interface) configuration list for the cisco.dcnm.dcnm_interface
-  module to deploy L3 VLAN interfaces to NDFC.
+  Generate SVI (VLAN interface) configuration items for the
+  cisco.dcnm.dcnm_interface module. Supports full HSRP configuration
+  (group, VIP, version, priority, preempt), DHCP relay (up to 3 servers),
+  and OSPF routing. HSRP timers and OSPF routing go into the cmds freeform
+  field, as the module has no dedicated parameters for them.
 
 Module: cisco.dcnm.dcnm_interface
-  - type: svi (VLAN interface)
+  - type: svi
   - state: replaced (idempotent configuration)
 
 Input Variables:
   switches_to_provision    - List of switches with add_to_fabric: true
   l3_interfaces_lookup     - L3 interface data per switch (from l3_interfaces.yml)
+
+Inventory Variables (hosts.yml):
+  mgmt_int                    - Management interface name (e.g., Vlan199)
+  mgmt_int_dhcp_relay_list    - DHCP relay servers for the management interface
+                                (used for POAP switches needing a temporary DHCP IP)
+
+DHCP Relay Logic:
+  - If the interface matches mgmt_int and mgmt_int_dhcp_relay_list is defined:
+    Use DHCP servers from inventory (mgmt_int_dhcp_relay_list)
+  - Otherwise: Use DHCP servers from discovery data (iface.dhcp_relay)
+
+Interface Naming:
+  - Input:  Vlan199   (from discovery)
+  - Output: vlan199   (dcnm_interface expects lowercase vlan<id>)
+
+Output:
+  List of wrapper dicts: { hostname, fabric, config }
+  - hostname: inventory hostname (used for role-based filtering in playbook)
+  - fabric:   fabric name (used for groupby loop in playbook)
+  - config:   the dcnm_interface config item (name, type, switch, deploy, profile)
 
 Data Structure (l3_interfaces.yml):
   switches:
@@ -25,50 +48,126 @@ Data Structure (l3_interfaces.yml):
           ipv4_address: 198.18.24.66/26
           ipv4_redirects: False
           description: "Management_VLAN"
-
-Output:
-  List of SVI interface configurations in dcnm_interface format
-
-SVI Settings:
-  - mode: vlan
-  - admin_state: true
-  - disable_ip_redirects: true (security best practice)
+          vrf: default             # optional, default VRF → empty string for NDFC
+          mtu: 9216                # optional, defaults to 9216
+          dhcp_relay:              # optional
+            - 198.18.4.233
+          hsrp:                    # optional
+            group: 199
+            version: 2
+            virtual_ip: 198.18.24.65
+            priority: 110
+            preempt: false         # optional
+            timers:                # optional – goes into cmds freeform
+              hello_interval: 1
+              hold_time: 3
+              msec: false          # true = millisecond timers
+          ospf:                    # optional – goes into cmds freeform
+            area: 0.0.0.1
+            process: EDGE
 
 ================================================================================
 #}
 {% set config = [] %}
 {% for switch in switches_to_provision %}
   {% set hostname = switch.inventory_hostname %}
+  {% set switch_ip = switch.ansible_host %}
   {% if hostname in l3_interfaces_lookup %}
     {% set switch_data = l3_interfaces_lookup[hostname] %}
-    {% set switch_ip = hostvars[hostname]['ansible_host'] %}
-    {% for iface in switch_data.interfaces | default([]) %}
+    {% set fabric_name = switch_data.fabric %}
+    {% for iface in switch_data.interfaces | default([], true) %}
       {% if iface.type == 'svi' and iface.ipv4_address is defined %}
         {% set ip_parts = iface.ipv4_address.split('/') %}
         {% set ip_addr = ip_parts[0] %}
         {% set prefix_len = ip_parts[1] | default('24') | int %}
-        {# Extract VLAN ID from interface name (e.g., Vlan199 -> 199) #}
-        {% set vlan_id = iface.name | lower | regex_replace('^vlan', '') %}
-        {# Handle VRF - NDFC uses empty string for default VRF #}
+        {# Convert to lowercase vlan<id> as expected by dcnm_interface #}
+        {% set vlan_id = iface.name | regex_replace('^[Vv]lan', '') %}
+        {% set iface_name = 'vlan' + vlan_id %}
+
+        {# Handle VRF: NDFC uses empty string for default VRF #}
         {% set vrf = iface.vrf | default('') %}
-        {% if vrf == 'default' %}
-          {% set vrf = '' %}
+        {% if vrf == 'default' %}{% set vrf = '' %}{% endif %}
+
+        {# DHCP relay logic:
+           - If this is the mgmt_int and mgmt_int_dhcp_relay_list is defined in inventory,
+             use those servers (needed for POAP bootstrap DHCP)
+           - Otherwise use servers discovered from the switch (iface.dhcp_relay) #}
+        {% set is_mgmt_int = (iface.name | lower == switch.mgmt_int | default('') | lower) %}
+        {% set dhcp_relay_list = switch.mgmt_int_dhcp_relay_list | default([])
+           if (is_mgmt_int and switch.mgmt_int_dhcp_relay_list is defined)
+           else iface.dhcp_relay | default([]) %}
+
+        {# Build cmds list for items dcnm_interface has no dedicated fields for:
+           - OSPF routing assignment
+           - HSRP timers (hello/hold intervals, including msec mode) #}
+        {% set cmds = [] %}
+        {% if iface.ospf is defined %}
+          {% set _ = cmds.append('ip router ospf ' + iface.ospf.process | string + ' area ' + iface.ospf.area | string) %}
         {% endif %}
-        {% set svi_config = {
-          'name': 'vlan' ~ vlan_id,
-          'type': 'svi',
-          'switch': [switch_ip],
-          'deploy': false,
-          'profile': {
-            'admin_state': iface.enabled | default(true),
-            'mode': 'vlan',
-            'int_vrf': vrf,
-            'ipv4_addr': ip_addr,
-            'ipv4_mask_len': prefix_len,
-            'disable_ip_redirects': not (iface.ipv4_redirects | default(false))
-          }
+        {% if iface.hsrp is defined and iface.hsrp.timers is defined %}
+          {% set timer_hello = iface.hsrp.timers.hello_interval | default(3) %}
+          {% set timer_hold  = iface.hsrp.timers.hold_time | default(10) %}
+          {% set _ = cmds.append('  hsrp ' + iface.hsrp.group | string) %}
+          {% if iface.hsrp.timers.msec | default(false) %}
+            {% set _ = cmds.append('    timers msec ' + timer_hello | string + ' msec ' + timer_hold | string) %}
+          {% else %}
+            {% set _ = cmds.append('    timers ' + timer_hello | string + ' ' + timer_hold | string) %}
+          {% endif %}
+        {% endif %}
+
+        {# Core SVI profile - fields common to all SVIs #}
+        {% set svi_profile = {
+          'admin_state':          iface.enabled | default(true) | bool,
+          'mode':                 'vlan',
+          'int_vrf':              vrf,
+          'ipv4_addr':            ip_addr,
+          'ipv4_mask_len':        prefix_len,
+          'mtu':                  iface.mtu | default(9216) | int,
+          'description':          iface.description | default(''),
+          'disable_ip_redirects': not (iface.ipv4_redirects | default(false) | bool),
+          'enable_hsrp':          true if iface.hsrp is defined else false,
+          'cmds':                 cmds
         } %}
-        {% set _ = config.append(svi_config) %}
+
+        {# HSRP parameters - only included when HSRP is configured on the interface #}
+        {% if iface.hsrp is defined %}
+          {% set _ = svi_profile.update({
+            'hsrp_vip':      iface.hsrp.virtual_ip | default('') | string,
+            'hsrp_group':    iface.hsrp.group | string,
+            'hsrp_priority': iface.hsrp.priority | default('') | string,
+            'hsrp_version':  iface.hsrp.version | default(2) | int,
+            'preempt':       iface.hsrp.preempt | default(false) | bool
+          }) %}
+        {% endif %}
+
+        {# DHCP relay - dcnm_interface supports up to 3 relay servers #}
+        {% if dhcp_relay_list | length > 0 %}
+          {% set _ = svi_profile.update({'dhcp_server_addr1': dhcp_relay_list[0] | string}) %}
+        {% endif %}
+        {% if dhcp_relay_list | length > 1 %}
+          {% set _ = svi_profile.update({'dhcp_server_addr2': dhcp_relay_list[1] | string}) %}
+        {% endif %}
+        {% if dhcp_relay_list | length > 2 %}
+          {% set _ = svi_profile.update({'dhcp_server_addr3': dhcp_relay_list[2] | string}) %}
+        {% endif %}
+
+        {# Full dcnm_interface config item #}
+        {% set svi_config_item = {
+          'name':    iface_name,
+          'type':    'svi',
+          'switch':  [switch_ip],
+          'deploy':  false,
+          'profile': svi_profile
+        } %}
+
+        {# Wrap with metadata for role/fabric filtering in the playbook.
+           Only 'config' is passed to dcnm_interface; hostname/fabric are
+           used for selectattr/groupby filtering before the module call. #}
+        {% set _ = config.append({
+          'hostname': hostname,
+          'fabric':   fabric_name,
+          'config':   svi_config_item
+        }) %}
       {% endif %}
     {% endfor %}
   {% endif %}
