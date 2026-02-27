@@ -1,5 +1,5 @@
 ---
-# Playbook: 1.0-configure-nd-fabric.yml
+# Playbook: 1.0-provision-nd-fabrics.yml
 # Purpose: Deploy fabric configurations to Nexus Dashboard Fabric Controller (NDFC)
 #
 # Description:
@@ -34,8 +34,8 @@
 #   - configure-fabrics: Run only fabric configuration tasks
 #
 # Example Usage:
-#   ansible-playbook ./playbooks/provision-fabric/1.0-configure-nd-fabric.yml
-#   ansible-playbook ./playbooks/provision-fabric/1.0-configure-nd-fabric.yml --tags configure-fabrics
+#   ansible-playbook ./playbooks/provision-fabric/1.0-provision-nd-fabrics.yml
+#   ansible-playbook ./playbooks/provision-fabric/1.0-provision-nd-fabrics.yml --tags configure-fabrics
 
 - name: Deploy Fabric Configuration to Nexus Dashboard
   hosts: nexus_dashboard

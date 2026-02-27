@@ -107,7 +107,7 @@ ansible-dc-lan-migration/
 │   ├── discovery/                              # Profile existing switches
 │   │   └── 1.0-profile-existing-switches.yml
 │   ├── provision-fabric/                       # Fabric configuration
-│   │   └── 1.0-configure-nd-fabric.yml
+│   │   └── 1.0-provision-nd-fabrics.yml
 │   └── provision-switch/                       # Switch provisioning workflow
 │       ├── 1.0-provision-switches.yml          # Add switches to NDFC (POAP or Discovery)
 │       ├── 1.1-create-discovery-user.yml
@@ -205,7 +205,7 @@ The `1.0-provision-switches.yml` playbook automatically determines how to add ea
 
 | Playbook | Template(s) | Description |
 |----------|-------------|-------------|
-| `1.0-configure-nd-fabric.yml` | — | Create and update fabric definitions in NDFC using `cisco.dcnm.dcnm_fabric` |
+| `1.0-provision-nd-fabrics.yml` | `1.0-configure-nd-fabric-enhanced.j2` | Create and update fabric definitions in NDFC. `classicLan` via `cisco.dcnm.dcnm_fabric`; `enhancedLan` via REST API (`POST`/`PUT /api/v1/manage/fabrics`) |
 
 ---
 
