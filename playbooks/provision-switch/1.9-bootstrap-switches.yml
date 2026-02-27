@@ -1,5 +1,5 @@
 ---
-# Playbook: 1.8-bootstrap-switches.yml
+# Playbook: 1.9-bootstrap-switches.yml
 # Purpose: Bootstrap pre-provisioned switches that have connected via POAP
 #
 # Description:
@@ -9,8 +9,8 @@
 #   3. For each matched switch, executing the bootstrap API to complete provisioning
 #
 # Prerequisites:
-#   - Run 1.0-1.6 playbooks to pre-provision switch configuration
-#   - Switch has booted and connected to NDFC via POAP (verified by 1.7-check-poap-status.yml)
+#   - Run 1.0-1.7 playbooks to pre-provision switch configuration
+#   - Switch has booted and connected to NDFC via POAP (verified by 1.8-check-poap-status.yml)
 #
 # Variables Required (per switch in hosts.yml):
 #   - add_to_fabric: Set to true to include switch in provisioning
@@ -25,14 +25,14 @@
 #   - POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/<fabric>/inventory/poap
 #
 # Templates Used:
-#   - 1.8-bootstrap-switches.j2: JSON template for bootstrap payload
+#   - 1.9-bootstrap-switches.j2: JSON template for bootstrap payload
 #
 # Tags:
 #   - bootstrap-switches: Run bootstrap tasks
 #
 # Example Usage:
-#   ansible-playbook ./playbooks/provision-switch/1.8-bootstrap-switches.yml
-#   ansible-playbook ./playbooks/provision-switch/1.8-bootstrap-switches.yml -v
+#   ansible-playbook ./playbooks/provision-switch/1.9-bootstrap-switches.yml
+#   ansible-playbook ./playbooks/provision-switch/1.9-bootstrap-switches.yml -v
 
 - name: Bootstrap Pre-provisioned Switches via POAP
   hosts: nexus_dashboard
@@ -286,7 +286,7 @@
             └─ Port-Channels: {{ config.port_channels | length }}
           {% endfor %}
           {% if bootstrap_configs | length == 0 %}
-          No switches are connected via POAP yet. Run 1.7-check-poap-status.yml first to verify.
+          No switches are connected via POAP yet. Run 1.8-check-poap-status.yml first to verify.
           {% endif %}
       when: bootstrap_configs is defined
 
@@ -302,7 +302,7 @@
         login_domain: "{{ ansible_httpapi_login_domain }}"
         path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{{ item.fabric }}/inventory/poap"
         method: POST
-        content: "{{ lookup('template', '../../templates/1.8-bootstrap-switches.j2') }}"
+        content: "{{ lookup('template', '../../templates/1.9-bootstrap-switches.j2') }}"
       loop: "{{ bootstrap_configs }}"
       loop_control:
         label: "{{ item.hostname }} ({{ item.serial_number }})"

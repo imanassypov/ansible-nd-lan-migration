@@ -1,5 +1,5 @@
 ---
-# Playbook: 1.6-provision-static-routes.yml
+# Playbook: 1.7-provision-static-routes.yml
 # Purpose: Configure default static route on pre-provisioned switches via NDFC
 #
 # Description:
@@ -26,14 +26,14 @@
 #   - GET /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/switches/<serial>
 #
 # Templates Used:
-#   - 1.6-provision-default-route.j2: JSON template for static route policy
+#   - 1.7-provision-static-routes.j2: JSON template for static route policy
 #
 # Tags:
 #   - preprovision-default-route: Run only default route provisioning tasks
 #
 # Example Usage:
-#   ansible-playbook ./playbooks/provision-switch/1.6-provision-static-routes.yml
-#   ansible-playbook ./playbooks/provision-switch/1.6-provision-static-routes.yml --tags preprovision-default-route
+#   ansible-playbook ./playbooks/provision-switch/1.7-provision-static-routes.yml
+#   ansible-playbook ./playbooks/provision-switch/1.7-provision-static-routes.yml --tags preprovision-default-route
 
 - name: Configure Default Routes on Pre-provisioned Switches
   hosts: nexus_dashboard
@@ -223,7 +223,7 @@
         login_domain: "{{ ansible_httpapi_login_domain }}"
         path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create"
         method: POST
-        content: "{{ lookup('template', '../../templates/1.6-provision-default-route.j2') }}"
+        content: "{{ lookup('template', '../../templates/1.7-provision-static-routes.j2') }}"
       loop: "{{ static_routes_filtered }}"
       loop_control:
         label: "{{ item.hostname }}: {{ item.prefix }} via {{ item.next_hop }}"

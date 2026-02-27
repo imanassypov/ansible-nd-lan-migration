@@ -1,0 +1,296 @@
+---
+#==============================================================================
+# Playbook: 1.6-provision-vrf.yml
+#==============================================================================
+# Purpose: Configure VRF definitions on switches via Nexus Dashboard (NDFC)
+#
+# Description:
+#   Reads profiled VRF data from fabrics/<fabric>/vrf_database.yml and
+#   creates a freeform switch policy per VRF via the NDFC REST API.
+#
+#   Skips built-in VRFs ("default", "management") that are always present
+#   on NX-OS and cannot be removed or re-created.
+#
+#   Idempotency: queries existing switch policies before sending any
+#   configuration. VRFs whose policy description already matches
+#   "VRF definition: <name>" are silently skipped.
+#
+# Prerequisites:
+#   - Run 1.0-provision-switches.yml to onboard switches to NDFC
+#   - Run discovery playbook (1.0-profile-existing-switches.yml) with
+#     --tags profile-vrfs to generate vrf_database.yml files
+#
+# Modules Used:
+#   - cisco.nd.nd_rest: NDFC REST API (policy bulk-create / query)
+#
+# Templates Used:
+#   - templates/1.6-provision-vrf.j2: switch_freeform JSON payload per VRF
+#
+# Variables Required (per switch in inventory/hosts.yml):
+#   - add_to_fabric: true  - include switch in provisioning
+#   - fabric              - target fabric name (must match nd_fabrics[])
+#   - destination_switch_sn (optional) - override serial for POAP switches
+#
+# Variables from vrf_database.yml:
+#   - switches.<hostname>.vrfs: list of VRFs with name/description/rd/vni
+#
+# API Endpoints Used:
+#   - GET  /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/switches/<serial>
+#   - POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create
+#
+# Tags:
+#   - deploy-vrf: Run only VRF provisioning tasks
+#
+# Usage Examples:
+#   ansible-playbook ./playbooks/provision-switch/1.6-provision-vrf.yml
+#   ansible-playbook ./playbooks/provision-switch/1.6-provision-vrf.yml --tags deploy-vrf
+#==============================================================================
+
+- name: Configure VRF Definitions on Switches via NDFC
+  hosts: nexus_dashboard
+  gather_facts: false
+
+  tags:
+    - deploy-vrf
+
+  tasks:
+
+    #--------------------------------------------------------------------------
+    # Pre-flight: Verify NDFC is reachable before any provisioning
+    #--------------------------------------------------------------------------
+    - name: Verify NDFC connectivity
+      ansible.builtin.import_tasks: ../common/ndfc-preflight-check.yml
+
+    #--------------------------------------------------------------------------
+    # Build list of switches to provision
+    #--------------------------------------------------------------------------
+    - name: Build list of switches to provision
+      ansible.builtin.set_fact:
+        switches_to_provision: >-
+          {{
+            groups['switches'] | default([])
+            | map('extract', hostvars)
+            | selectattr('add_to_fabric', 'defined')
+            | selectattr('add_to_fabric', 'equalto', true)
+            | list
+          }}
+
+    - name: Display switches to provision
+      ansible.builtin.debug:
+        msg: "Switches to provision: {{ switches_to_provision | map(attribute='inventory_hostname') | list }}"
+      when: switches_to_provision | length > 0
+
+    #--------------------------------------------------------------------------
+    # Build fabric paths for targeted file discovery
+    #--------------------------------------------------------------------------
+    - name: Build fabric paths from nd_fabrics
+      ansible.builtin.import_tasks: ../common/build-fabric-paths.yml
+      when: switches_to_provision | length > 0
+
+    #--------------------------------------------------------------------------
+    # Load VRF data from profiled fabric files
+    #--------------------------------------------------------------------------
+    - name: Find all vrf_database.yml files
+      ansible.builtin.find:
+        paths: "{{ fabric_paths }}"
+        patterns: "vrf_database.yml"
+      register: vrf_database_files
+      when: switches_to_provision | length > 0
+
+    - name: Load VRF data from all fabrics
+      ansible.builtin.include_vars:
+        file: "{{ item.path }}"
+        name: "vrf_data_{{ item.path | dirname | basename }}"
+      loop: "{{ vrf_database_files.files | default([]) }}"
+      loop_control:
+        label: "{{ item.path | dirname | basename }}"
+      when: switches_to_provision | length > 0
+
+    - name: Build consolidated VRF lookup (keyed by hostname)
+      ansible.builtin.set_fact:
+        vrf_lookup: |
+          {%- set lookup = {} -%}
+          {%- for file in vrf_database_files.files | default([]) -%}
+            {%- set fabric_name = file.path | dirname | basename -%}
+            {%- set var_name = 'vrf_data_' + fabric_name -%}
+            {%- if hostvars[inventory_hostname][var_name] is defined -%}
+              {%- set fabric_data = hostvars[inventory_hostname][var_name] -%}
+              {%- if fabric_data.switches is defined -%}
+                {%- for hostname, data in fabric_data.switches.items() -%}
+                  {%- set _ = lookup.update({hostname: data | combine({'fabric': fabric_name})}) -%}
+                {%- endfor -%}
+              {%- endif -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ lookup }}
+      when: switches_to_provision | length > 0
+
+    #--------------------------------------------------------------------------
+    # Build per-switch VRF deployment list
+    # Skip built-in VRFs: "default" and "management" are always present on
+    # NX-OS and are not provisioned via policies.
+    #--------------------------------------------------------------------------
+    - name: Build VRF deployment list
+      ansible.builtin.set_fact:
+        vrf_deploy_list: |
+          {%- set deploy = [] -%}
+          {%- set skip_vrfs = ['default', 'management'] -%}
+          {%- for switch in switches_to_provision -%}
+            {%- set hostname = switch.inventory_hostname -%}
+            {%- set serial = switch.destination_switch_sn | default('') -%}
+            {%- set fabric = switch.fabric | default('') -%}
+            {%- if serial and hostname in vrf_lookup -%}
+              {%- set switch_vrf_data = vrf_lookup[hostname] -%}
+              {%- for vrf in switch_vrf_data.vrfs | default([], true) -%}
+                {%- if vrf.name | lower not in skip_vrfs -%}
+                  {%- set entry = {
+                    'hostname': hostname,
+                    'serial_number': serial,
+                    'fabric_name': fabric,
+                    'vrf_name': vrf.name,
+                    'vrf_description': vrf.description | default(''),
+                    'vrf_rd': vrf.rd | default(''),
+                    'vrf_vni': vrf.vni | default('')
+                  } -%}
+                  {%- set _ = deploy.append(entry) -%}
+                {%- endif -%}
+              {%- endfor -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ deploy }}
+      when:
+        - switches_to_provision | length > 0
+        - vrf_lookup is defined
+
+    #--------------------------------------------------------------------------
+    # Idempotency: query existing policies and filter out configured VRFs
+    #--------------------------------------------------------------------------
+    - name: Get unique serial numbers from VRF deploy list
+      ansible.builtin.set_fact:
+        unique_serials: "{{ vrf_deploy_list | map(attribute='serial_number') | unique | list }}"
+      when:
+        - vrf_deploy_list is defined
+        - vrf_deploy_list | length > 0
+
+    - name: Query existing policies per switch
+      cisco.nd.nd_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_ssh_pass }}"
+        use_ssl: "{{ ansible_httpapi_use_ssl }}"
+        validate_certs: "{{ ansible_httpapi_validate_certs }}"
+        use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        login_domain: "{{ ansible_httpapi_login_domain }}"
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/switches/{{ item }}"
+        method: GET
+      loop: "{{ unique_serials | default([]) }}"
+      loop_control:
+        label: "{{ item }}"
+      when:
+        - unique_serials is defined
+        - unique_serials | length > 0
+      register: existing_policies_query
+      ignore_errors: true
+
+    - name: Build set of already-configured VRFs per serial number
+      ansible.builtin.set_fact:
+        existing_vrfs_lookup: |
+          {%- set lookup = {} -%}
+          {%- for result in existing_policies_query.results | default([]) -%}
+            {%- if result.current is defined and result.current is iterable and result.current is not string -%}
+              {%- set serial = result.item -%}
+              {%- set configured_vrfs = [] -%}
+              {%- for policy in result.current -%}
+                {%- if policy.templateName is defined and policy.templateName == 'switch_freeform' -%}
+                  {%- if policy.description is defined and policy.description.startswith('VRF definition: ') -%}
+                    {%- set vrf_name = policy.description | replace('VRF definition: ', '') -%}
+                    {%- set _ = configured_vrfs.append(vrf_name) -%}
+                  {%- endif -%}
+                {%- endif -%}
+              {%- endfor -%}
+              {%- set _ = lookup.update({serial: configured_vrfs}) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ lookup }}
+      when: existing_policies_query is defined
+
+    - name: Filter out VRFs that are already configured
+      ansible.builtin.set_fact:
+        vrf_deploy_filtered: |
+          {%- set filtered = [] -%}
+          {%- for entry in vrf_deploy_list -%}
+            {%- set serial = entry.serial_number -%}
+            {%- set vrf_name = entry.vrf_name -%}
+            {%- set configured = existing_vrfs_lookup.get(serial, []) -%}
+            {%- if vrf_name not in configured -%}
+              {%- set _ = filtered.append(entry) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ filtered }}
+      when:
+        - vrf_deploy_list is defined
+        - existing_vrfs_lookup is defined
+
+    #--------------------------------------------------------------------------
+    # Display deployment plan
+    #--------------------------------------------------------------------------
+    - name: Display VRF deployment plan
+      ansible.builtin.debug:
+        msg: |
+          VRF provisioning plan:
+          - Total profiled VRFs (excluding default/management): {{ vrf_deploy_list | default([]) | length }}
+          - Already configured (skipped): {{ (vrf_deploy_list | default([]) | length) - (vrf_deploy_filtered | default([]) | length) }}
+          - To be configured:
+          {% for entry in vrf_deploy_filtered | default([]) %}
+            - {{ entry.hostname }}: {{ entry.vrf_name }}{% if entry.vrf_description %} ({{ entry.vrf_description }}){% endif %}
+
+          {% endfor %}
+      when: vrf_deploy_filtered is defined
+
+    - name: Skip notification when no VRFs to configure
+      ansible.builtin.debug:
+        msg: "All VRFs are already configured or no VRF data found. Nothing to provision."
+      when:
+        - vrf_deploy_filtered is defined
+        - vrf_deploy_filtered | length == 0
+
+    #--------------------------------------------------------------------------
+    # Deploy VRFs via NDFC REST API
+    #--------------------------------------------------------------------------
+    - name: Configure VRF definitions via NDFC switch_freeform policy
+      cisco.nd.nd_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_ssh_pass }}"
+        use_ssl: "{{ ansible_httpapi_use_ssl }}"
+        validate_certs: "{{ ansible_httpapi_validate_certs }}"
+        use_proxy: "{{ ansible_httpapi_use_proxy }}"
+        login_domain: "{{ ansible_httpapi_login_domain }}"
+        path: "/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create"
+        method: POST
+        content: "{{ lookup('template', '../../templates/1.6-provision-vrf.j2') }}"
+      loop: "{{ vrf_deploy_filtered }}"
+      loop_control:
+        label: "{{ item.hostname }}: {{ item.vrf_name }}"
+      vars:
+        serial_number: "{{ item.serial_number }}"
+        vrf_name: "{{ item.vrf_name }}"
+        vrf_description: "{{ item.vrf_description }}"
+        vrf_rd: "{{ item.vrf_rd }}"
+        vrf_vni: "{{ item.vrf_vni }}"
+      when:
+        - vrf_deploy_filtered is defined
+        - vrf_deploy_filtered | length > 0
+      register: vrf_results
+
+    - name: Display VRF provisioning results
+      ansible.builtin.debug:
+        msg: |
+          VRF provisioning complete.
+          Already existed (skipped): {{ (vrf_deploy_list | default([]) | length) - (vrf_deploy_filtered | default([]) | length) }}
+          {% for result in vrf_results.results | default([]) %}
+          {% if result.skipped is not defined or not result.skipped %}
+          - {{ result.item.hostname }}: {{ result.item.vrf_name }}: {{ 'SUCCESS' if (result.failed is not defined or not result.failed) else 'FAILED' }}
+          {% endif %}
+          {% endfor %}
+      when: vrf_results is defined

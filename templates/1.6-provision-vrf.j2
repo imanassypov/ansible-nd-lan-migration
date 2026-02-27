@@ -1,0 +1,56 @@
+{#
+================================================================================
+Template: VRF Policy (JSON Payload)
+================================================================================
+Purpose:
+  Generate JSON payload for the NDFC REST API to configure a VRF on a
+  switch via the bulk-create endpoint using a freeform config policy.
+
+API Endpoint:
+  POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create
+
+Input Variables:
+  serial_number   - Target switch serial number
+  vrf_name        - VRF name (e.g., "MGMT")
+  vrf_description - VRF description string (optional)
+  vrf_rd          - Route distinguisher (optional, e.g., "100:1")
+  vrf_vni         - VNI number (optional, for VXLAN-adjacent configs)
+
+Key Settings:
+  entityName: SWITCH              - Policy applies to a switch entity
+  entityType: SWITCH              - Entity type
+  priority: 500                   - Policy priority
+  templateName: switch_freeform   - NDFC freeform NX-OS config template
+
+Notes:
+  - Uses switch_freeform template which delivers raw NX-OS CLI to the switch
+  - CONF field contains multi-line NX-OS VRF configuration
+  - Policy description follows pattern "VRF definition: <name>" for
+    idempotency detection (playbook checks description before POSTing)
+  - VRFs named "default" and "management" are excluded by the playbook
+    as they are always present on NX-OS and cannot be created/deleted
+================================================================================
+#}
+{%- set conf_lines = [] -%}
+{%- set _ = conf_lines.append('vrf context ' ~ vrf_name) -%}
+{%- if vrf_description is defined and vrf_description -%}
+{%- set _ = conf_lines.append('  description ' ~ vrf_description) -%}
+{%- endif -%}
+{%- if vrf_rd is defined and vrf_rd -%}
+{%- set _ = conf_lines.append('  rd ' ~ vrf_rd) -%}
+{%- endif -%}
+{%- if vrf_vni is defined and vrf_vni -%}
+{%- set _ = conf_lines.append('  vni ' ~ vrf_vni) -%}
+{%- endif -%}
+{
+  "nvPairs": {
+    "CONF": "{{ conf_lines | join('\\n') }}"
+  },
+  "entityName": "SWITCH",
+  "entityType": "SWITCH",
+  "source": "",
+  "priority": 500,
+  "description": "VRF definition: {{ vrf_name }}",
+  "templateName": "switch_freeform",
+  "serialNumber": "{{ serial_number }}"
+}
