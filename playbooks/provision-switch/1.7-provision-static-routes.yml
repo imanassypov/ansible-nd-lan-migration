@@ -243,10 +243,16 @@
       ansible.builtin.debug:
         msg: |
           Static route configuration complete.
-          Already existed (skipped): {{ (static_routes | length) - (static_routes_filtered | default([]) | length) }}
+          Total routes found:        {{ static_routes | default([]) | length }}
+          Already existed (skipped): {{ (static_routes | default([]) | length) - (static_routes_filtered | default([]) | length) }}
+          Newly configured:          {{ route_results.results | default([]) | rejectattr('skipped', 'defined') | list | length }}
+          {% set failed = route_results.results | default([]) | selectattr('failed', 'defined') | selectattr('failed', 'equalto', true) | list %}
+          Failed:                    {{ failed | length }}
+          {% if static_routes | default([]) | length == 0 %}
+          WARNING: No static routes were found. Verify static_routes.yml is populated and switches have add_to_fabric: true.
+          {% endif %}
           {% for result in route_results.results | default([]) %}
           {% if result.skipped is not defined or not result.skipped %}
           - {{ result.item.hostname }}: {{ result.item.prefix }} via {{ result.item.next_hop }}{% if result.item.interface %} ({{ result.item.interface }}){% endif %}: {{ 'SUCCESS' if result.failed is not defined or not result.failed else 'FAILED' }}
           {% endif %}
           {% endfor %}
-      when: route_results is defined
