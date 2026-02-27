@@ -42,7 +42,7 @@ Port-channel Member Auto-extraction:
     {# --- Auto-extract port-channel member interfaces --- #}
     {% set pc_interfaces = l2_interfaces_lookup[switch_name].interfaces | selectattr('type', 'equalto', 'pc') | list %}
     {% for pc in pc_interfaces %}
-      {% if pc.members is defined %}
+      {% if pc.members is defined and pc.members %}
         {% for member in pc.members %}
           {% set member_iface_name = member.interface | regex_replace('^Ethernet', 'eth') %}
           {% set member_config = {

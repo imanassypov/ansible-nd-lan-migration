@@ -67,7 +67,7 @@ Output:
        - For Discovery switches: destination_switch_sn == switch_details serial (same value)
        - For POAP switches: destination_switch_sn is the pre-provisioned serial NDFC knows #}
     {% set serial_number = switch.destination_switch_sn | default(switch_details_lookup[switch_ip].serial_number | default('')) %}
-    {% for iface in switch_data.interfaces | default([]) %}
+    {% for iface in switch_data.interfaces | default([], true) %}
       {% if iface.type == 'svi' and iface.ipv4_address is defined %}
         {% set ip_parts = iface.ipv4_address.split('/') %}
         {% set ip_addr = ip_parts[0] %}

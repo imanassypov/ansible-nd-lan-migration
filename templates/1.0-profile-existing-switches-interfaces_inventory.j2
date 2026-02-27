@@ -130,7 +130,9 @@ switches:
         members:
 {% for member in interface.members %}
           - interface: {{ member.member }}
+{% if member.mode is defined and member.mode %}
             mode: {{ member.mode }}
+{% endif %}
 {% endfor %}
 {% endif %}
 {% if interface.cdp_enable is defined %}
