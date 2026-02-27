@@ -100,7 +100,7 @@
       loop_control:
         label: "{{ item.FABRIC_NAME }}"
       register: enhanced_fabric_query
-      ignore_errors: true
+      failed_when: status is defined and status | int not in [200, 404]
       when: enhanced_fabrics | length > 0
 
     - name: Build set of existing enhanced fabric names
@@ -108,7 +108,7 @@
         existing_enhanced_fabrics: >-
           {{
             enhanced_fabric_query.results | default([])
-            | rejectattr('failed', 'defined')
+            | selectattr('status', 'equalto', 200)
             | map(attribute='item.FABRIC_NAME')
             | list
           }}
