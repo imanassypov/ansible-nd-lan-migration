@@ -9,7 +9,7 @@
 #   3. Creating static route policy via bulk-create API
 #
 # Prerequisites:
-#   - Run 1.5-provision-vlan-policies.yml first
+#   - Run 1.4-provision-vlan-policies.yml first
 #   - Run discovery playbook to generate static_routes.yml
 #
 # Variables Required (per switch in hosts.yml):

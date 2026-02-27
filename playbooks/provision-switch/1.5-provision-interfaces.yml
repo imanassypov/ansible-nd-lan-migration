@@ -27,10 +27,10 @@
 #   - fabrics/<fabric>/switch_details.yml - Switch serial numbers for REST API
 #
 # Templates Used:
-#   - templates/1.4-provision-interfaces-eth.j2 - Ethernet interface config
-#   - templates/1.4-provision-interfaces-pc.j2 - Port-channel interface config
-#   - templates/1.4-provision-interfaces-vpc.j2 - VPC interface config
-#   - templates/1.4-provision-interfaces-svi-rest.j2 - SVI config with HSRP (REST API)
+#   - templates/1.5-provision-interfaces-eth.j2 - Ethernet interface config
+#   - templates/1.5-provision-interfaces-pc.j2 - Port-channel interface config
+#   - templates/1.5-provision-interfaces-vpc.j2 - VPC interface config
+#   - templates/1.5-provision-interfaces-svi-rest.j2 - SVI config with HSRP (REST API)
 #
 # Tags:
 #   - deploy-l2-interfaces: Deploy only Layer 2 interfaces (Ethernet/Port-channel)
@@ -38,10 +38,10 @@
 #   - deploy-svi-interfaces: Deploy only SVI (VLAN) interfaces with HSRP
 #
 # Usage Examples:
-#   ansible-playbook 1.4-provision-interfaces.yml --tags deploy-l2-interfaces
-#   ansible-playbook 1.4-provision-interfaces.yml --tags deploy-vpc-interfaces
-#   ansible-playbook 1.4-provision-interfaces.yml --tags deploy-svi-interfaces
-#   ansible-playbook 1.4-provision-interfaces.yml  # Deploy all interface types
+#   ansible-playbook 1.5-provision-interfaces.yml --tags deploy-l2-interfaces
+#   ansible-playbook 1.5-provision-interfaces.yml --tags deploy-vpc-interfaces
+#   ansible-playbook 1.5-provision-interfaces.yml --tags deploy-svi-interfaces
+#   ansible-playbook 1.5-provision-interfaces.yml  # Deploy all interface types
 #==============================================================================
 
 #------------------------------------------------------------------------------
@@ -134,7 +134,7 @@
     #--------------------------------------------------------------------------
     - name: Build Ethernet interface configuration from template
       ansible.builtin.set_fact:
-        eth_interface_config: "{{ lookup('template', playbook_dir + '/../../templates/1.4-provision-interfaces-eth.j2') | from_json }}"
+        eth_interface_config: "{{ lookup('template', playbook_dir + '/../../templates/1.5-provision-interfaces-eth.j2') | from_json }}"
       when:
         - switches_to_provision | length > 0
         - l2_interfaces_lookup is defined
@@ -222,7 +222,7 @@
     #--------------------------------------------------------------------------
     - name: Build Port-channel interface configuration from template
       ansible.builtin.set_fact:
-        pc_interface_config: "{{ lookup('template', playbook_dir + '/../../templates/1.4-provision-interfaces-pc.j2') | from_json }}"
+        pc_interface_config: "{{ lookup('template', playbook_dir + '/../../templates/1.5-provision-interfaces-pc.j2') | from_json }}"
       when:
         - switches_to_provision | length > 0
         - l2_interfaces_lookup is defined
@@ -390,7 +390,7 @@
     #--------------------------------------------------------------------------
     - name: Build VPC interface configuration from template
       ansible.builtin.set_fact:
-        vpc_interface_config: "{{ lookup('template', playbook_dir + '/../../templates/1.4-provision-interfaces-vpc.j2') | from_json }}"
+        vpc_interface_config: "{{ lookup('template', playbook_dir + '/../../templates/1.5-provision-interfaces-vpc.j2') | from_json }}"
       when:
         - switches_to_provision | length > 0
         - vpc_interfaces_by_fabric is defined
@@ -561,7 +561,7 @@
     #--------------------------------------------------------------------------
     - name: Build SVI interface REST API payloads from template (with HSRP support)
       ansible.builtin.set_fact:
-        svi_rest_payloads: "{{ lookup('template', playbook_dir + '/../../templates/1.4-provision-interfaces-svi-rest.j2') | from_json }}"
+        svi_rest_payloads: "{{ lookup('template', playbook_dir + '/../../templates/1.5-provision-interfaces-svi-rest.j2') | from_json }}"
       when:
         - switches_to_provision | length > 0
         - l3_interfaces_lookup is defined
