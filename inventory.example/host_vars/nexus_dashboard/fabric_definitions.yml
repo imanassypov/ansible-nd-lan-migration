@@ -1,8 +1,19 @@
 ---
 # Fabric Definitions - EXAMPLE
 # Copy to inventory/host_vars/nexus_dashboard/fabric_definitions.yml
+#
+# FABRIC_TYPE controls both the API path and module used:
+#
+#   classicLan    → cisco.dcnm.dcnm_fabric module (state: merged)
+#                   Supports POAP/DHCP bootstrap, in-band management
+#
+#   enhancedLan   → cisco.nd.nd_rest (REST API)
+#                   POST /api/v1/manage/fabrics         (create)
+#                   PUT  /api/v1/manage/fabrics/{name}  (update)
+#                   Requires BGP_AS and VRF_LITE_PROTOCOL
 
 nd_fabrics:
+  # --- Classic LAN fabric (supports POAP / DHCP bootstrap) ---
   - FABRIC_NAME: my-fabric
     FABRIC_TYPE: classicLan
     IS_READ_ONLY: false
@@ -16,6 +27,17 @@ nd_fabrics:
     INBAND_ENABLE: true
     MGMT_GW: 10.0.0.1
     MGMT_PREFIX: 24
+
+  # --- Enhanced LAN fabric (uses REST API, no POAP/DHCP support) ---
+  - FABRIC_NAME: my-enhanced-fabric
+    FABRIC_TYPE: enhancedLan       # Uses REST API: POST/PUT /api/v1/manage/fabrics
+    IS_READ_ONLY: false
+    PM_ENABLE: true
+    ENABLE_NXAPI: false
+    BGP_AS: "65000"                # BGP ASN for management plane (required)
+    VRF_LITE_PROTOCOL: "ebgp"      # VRF-Lite protocol: ebgp | static
+    # LICENSE_TIER: essentials     # essentials | advantage | premier (default: essentials)
+    # SECURITY_DOMAIN: all         # ND security domain (default: all)
 
 vpc_domains:
   - FABRIC_NAME: my-fabric
