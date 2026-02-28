@@ -16,9 +16,9 @@ For switches **not yet powered on**, identified by having `destination_switch_sn
 | Stage | Playbook | What Happens |
 |-------|----------|--------------|
 | **Pre-provision** | `1.0-provision-switches.yml` (tag: `preprovision-switches`) | Registers the switch serial number, model, IP, role, and gateway with NDFC using `cisco.dcnm.dcnm_inventory` POAP payloads — creating a placeholder *before* the switch boots. |
-| **Configure** | `1.1` – `1.6` | Provisions features, VPC domains, interfaces, VLANs, and default routes in NDFC so policies are ready ahead of time. |
-| **Wait for POAP** | `1.7-check-poap-status.yml` | Polls the POAP inventory to confirm the physical switch has booted and contacted NDFC. |
-| **Bootstrap** | `1.8-bootstrap-switches.yml` | Re-POSTs to the POAP API with `"reAdd": true`, pushing the switch's SSH fingerprint, public key, and Day-0 CLI config (port-channels, member interfaces) to complete onboarding. |
+| **Configure** | `1.1` – `1.7` | Provisions features, VPC domains, VLANs, interfaces, VRFs, and default routes in NDFC so policies are ready ahead of time. |
+| **Wait for POAP** | `1.8-check-poap-status.yml` | Polls the POAP inventory to confirm the physical switch has booted and contacted NDFC. |
+| **Bootstrap** | `1.9-bootstrap-switches.yml` | Re-POSTs to the POAP API with `"reAdd": true`, pushing the switch's SSH fingerprint, public key, and Day-0 CLI config (port-channels, member interfaces) to complete onboarding. |
 
 ### Discovery Workflow (Existing / Brownfield Switches)
 
@@ -28,7 +28,7 @@ For switches **already online and reachable via SSH**, identified by the *absenc
 |-------|----------|--------------|
 | **Profile** | `discovery/1.0-profile-existing-switches.yml` | SSHes into each switch to extract running configs into `fabrics/<fabric>/*.yml`. |
 | **Discover + Assign Role** | `1.0-provision-switches.yml` (tag: `discover-switches`) | Imports switches and assigns roles in one module workflow via `cisco.dcnm.dcnm_inventory` using SSH credentials with `preserve_config: true`. |
-| **Configure** | `1.1` – `1.6` | Applies the same feature, interface, VLAN, and routing policies as the greenfield path. |
+| **Configure** | `1.1` – `1.7` | Applies the same feature, VLAN, interface, VRF, and routing policies as the greenfield path. |
 
 ### How the Decision Is Made
 
@@ -44,7 +44,7 @@ inventory/hosts.yml switch entry
 
 | Switch Type | Inventory Markers | Onboarding Path | Key Playbooks |
 |---|---|---|---|
-| **New (greenfield)** | `destination_switch_sn`, `destination_switch_model`, `destination_switch_version` | Pre-provision → 1.1–1.6 → POAP check → Bootstrap | `1.0` → `1.7` → `1.8` |
+| **New (greenfield)** | `destination_switch_sn`, `destination_switch_model`, `destination_switch_version` | Pre-provision → 1.1–1.7 → POAP check → Bootstrap | `1.0` → `1.8` → `1.9` |
 | **Existing (brownfield)** | No serial number fields | Discovery (SSH import) → Role assignment → 1.1–1.6 | `1.0` (discover) → `1.1`–`1.6` |
 
 > **Note:** This deployment assumes **inband switch management**, which requires **Nexus Dashboard 4.1.1** or later. Switches must be reachable from Nexus Dashboard to their respective loopback management addresses for discovery.
@@ -68,7 +68,7 @@ ansible-vault edit inventory/group_vars/all/vault.yml
 # 3. Run provisioning playbooks in sequence
 ansible-playbook playbooks/provision-switch/1.0-provision-switches.yml
 ansible-playbook playbooks/provision-switch/1.1-create-discovery-user.yml
-# ... continue with 1.2 through 1.8
+# ... continue with 1.2 through 1.9
 ```
 
 ---
@@ -113,11 +113,12 @@ ansible-dc-lan-migration/
 │       ├── 1.1-create-discovery-user.yml
 │       ├── 1.2-provision-features.yml
 │       ├── 1.3-deploy-vpc-domain.yml
-│       ├── 1.4-provision-interfaces.yml
-│       ├── 1.5-provision-vlan-policies.yml
-│       ├── 1.6-provision-static-routes.yml
-│       ├── 1.7-check-poap-status.yml
-│       └── 1.8-bootstrap-switches.yml
+│       ├── 1.4-provision-vlan-policies.yml
+│       ├── 1.5-provision-interfaces.yml
+│       ├── 1.6-provision-vrf.yml
+│       ├── 1.7-provision-static-routes.yml
+│       ├── 1.8-check-poap-status.yml
+│       └── 1.9-bootstrap-switches.yml
 │
 ├── templates/                                  # Jinja2 templates for API payloads
 │
@@ -140,11 +141,12 @@ Run playbooks individually in sequence (1.0 → 1.8). For POAP workflows, run 1.
 | 1.1 | `create-discovery-user.yml` | `1.1-create-discovery-user.j2` | Create NDFC discovery user (switch_user policy) for switch authentication during discovery |
 | 1.2 | `provision-features.yml` | `1.2-provision-features.j2` | Configure NX-OS feature policies (LACP, LLDP, interface-vlan, etc.) using 1.2-provision-features-feature_lookup.yml mapping |
 | 1.3 | `deploy-vpc-domain.yml` | `1.3-deploy-vpc-domain.json.j2` | Deploy VPC domain configuration between aggregation switch pairs |
-| 1.4 | `provision-interfaces.yml` | `1.4-provision-interfaces-*.j2` | Configure L2/L3 interfaces (Ethernet, port-channels, VPC, SVI) with trunk/access/routed modes |
-| 1.5 | `provision-vlan-policies.yml` | `1.5-provision-vlan-policies.j2` | Deploy VLAN policies from vlan_database.yml to switches |
-| 1.6 | `provision-static-routes.yml` | `1.6-provision-default-route.j2` | Configure static default route (0.0.0.0/0) via management gateway |
-| 1.7 | `check-poap-status.yml` | — | Query POAP inventory to check if switches have connected and are ready for bootstrap |
-| 1.8 | `bootstrap-switches.yml` | `1.8-bootstrap-switches.j2` | Bootstrap pre-provisioned switches via POAP API to deploy Day-0 configuration |
+| 1.4 | `provision-vlan-policies.yml` | Inline (`create_vlan` policy) | Deploy VLAN policies from vlan_database.yml to switches via `cisco.dcnm.dcnm_policy` |
+| 1.5 | `provision-interfaces.yml` | `1.5-provision-interfaces-*.j2` | Configure L2/L3 interfaces (Ethernet, port-channels, VPC, SVI) via `cisco.dcnm.dcnm_interface` |
+| 1.6 | `provision-vrf.yml` | — | Configure VRF definitions on switches via `cisco.dcnm.dcnm_vrf` (skipped if no VRFs profiled) |
+| 1.7 | `provision-static-routes.yml` | Inline (`static_route_v4_v6` policy) | Configure static default route (0.0.0.0/0) via management gateway using `cisco.dcnm.dcnm_policy` |
+| 1.8 | `check-poap-status.yml` | — | Query POAP inventory to check if switches have connected and are ready for bootstrap |
+| 1.9 | `bootstrap-switches.yml` | `1.9-bootstrap-switches.j2` | Bootstrap pre-provisioned switches via POAP API to deploy Day-0 configuration |
 
 ### How Switches Are Added to NDFC
 
@@ -234,20 +236,23 @@ ansible-playbook playbooks/provision-switch/1.2-provision-features.yml
 # 1.3 - Deploy VPC domain (for aggregation switches)
 ansible-playbook playbooks/provision-switch/1.3-deploy-vpc-domain.yml
 
-# 1.4 - Configure interfaces (L2, port-channels, VPC)
-ansible-playbook playbooks/provision-switch/1.4-provision-interfaces.yml
+# 1.4 - Deploy VLAN policies
+ansible-playbook playbooks/provision-switch/1.4-provision-vlan-policies.yml
 
-# 1.5 - Deploy VLAN policies
-ansible-playbook playbooks/provision-switch/1.5-provision-vlan-policies.yml
+# 1.5 - Configure interfaces (L2, port-channels, VPC, SVI)
+ansible-playbook playbooks/provision-switch/1.5-provision-interfaces.yml
 
-# 1.6 - Configure default route
-ansible-playbook playbooks/provision-switch/1.6-provision-static-routes.yml
+# 1.6 - Configure VRFs (if applicable)
+ansible-playbook playbooks/provision-switch/1.6-provision-vrf.yml
 
-# 1.7 - Check if switches connected via POAP
-ansible-playbook playbooks/provision-switch/1.7-check-poap-status.yml
+# 1.7 - Configure default route
+ansible-playbook playbooks/provision-switch/1.7-provision-static-routes.yml
 
-# 1.8 - Bootstrap switches to deploy configuration
-ansible-playbook playbooks/provision-switch/1.8-bootstrap-switches.yml
+# 1.8 - Check if switches connected via POAP
+ansible-playbook playbooks/provision-switch/1.8-check-poap-status.yml
+
+# 1.9 - Bootstrap switches to deploy configuration
+ansible-playbook playbooks/provision-switch/1.9-bootstrap-switches.yml
 ```
 
 ### Workflow Diagram
@@ -265,11 +270,11 @@ ansible-playbook playbooks/provision-switch/1.8-bootstrap-switches.yml
 │         ↓                                                                │
 │  1.3 VPC Domain       Configure VPC peer-link (aggregation only)        │
 │         ↓                                                                │
-│  1.4 Interfaces       Configure L2/L3/VPC interfaces                    │
+│  1.4 VLANs            Deploy VLAN policies                              │
 │         ↓                                                                │
-│  1.5 VLANs            Deploy VLAN policies                              │
+│  1.5 Interfaces       Configure L2/L3/VPC/SVI interfaces                │
 │         ↓                                                                │
-│  1.6 SVI              Configure management SVI with IP                  │
+│  1.6 VRF              Configure VRF definitions (if any)                │
 │         ↓                                                                │
 │  1.7 Default Route    Configure static default route                    │
 │         ↓                                                                │
@@ -440,7 +445,7 @@ aggegation:
 | `mgmt_int_dhcp_relay_list` | list | List of DHCP server IPs to configure as relay addresses on the management SVI. Required for POAP leaf switches to acquire temporary DHCP IP addresses during bootstrap. |
 | `disable_lacp_suspend_individual_po_list` | list | List of VPC IDs (integers) that should have `no lacp suspend-individual` configured. Required for VPCs connecting to POAP leaf switches. |
 
-When `1.4-provision-interfaces.yml` runs:
+When `1.5-provision-interfaces.yml` runs:
 - VPCs in `disable_lacp_suspend_individual_po_list` get `DISABLE_LACP_SUSPEND: true` in NDFC → `no lacp suspend-individual` on switch
 - SVIs matching `mgmt_int` get DHCP relay addresses from `mgmt_int_dhcp_relay_list` → `ip dhcp relay address <ip>` on switch
 
@@ -455,7 +460,7 @@ Configuring 10 VPC interface(s):
 ...
 ```
 
-> **Post-POAP Cleanup**: Once all downstream leaf switches have completed POAP bootstrapping and their port-channels are operational, you can remove `disable_lacp_suspend_individual_po_list` and `mgmt_int_dhcp_relay_list` from the aggregation switches, then re-run `1.4-provision-interfaces.yml` to restore default settings.
+> **Post-POAP Cleanup**: Once all downstream leaf switches have completed POAP bootstrapping and their port-channels are operational, you can remove `disable_lacp_suspend_individual_po_list` and `mgmt_int_dhcp_relay_list` from the aggregation switches, then re-run `1.5-provision-interfaces.yml` to restore default settings.
 
 ### Why This is Required
 
@@ -572,7 +577,7 @@ ansible-playbook playbooks/provision-switch/1.0-provision-switches.yml --check
 ansible-playbook playbooks/provision-switch/0.0-full-provision-switch.yml -vvv
 
 # List tasks
-ansible-playbook playbooks/provision-switch/1.4-provision-interfaces.yml --list-tasks
+ansible-playbook playbooks/provision-switch/1.5-provision-interfaces.yml --list-tasks
 
 # Lint playbooks
 ansible-lint playbooks/**/*.yml
@@ -656,14 +661,14 @@ Complete list of NDFC REST API endpoints used by this project:
 | `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{fabric}/inventory` | GET | 1.0 | Query existing switches in fabric |
 | `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{fabric}/inventory/poap` | GET | 1.8, 1.9 | Query POAP inventory for connected switches |
 | `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{fabric}/inventory/poap` | POST | 1.9 | Bootstrap switch via POAP |
-| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/switches/{serial}` | GET | 1.1, 1.2, 1.5, 1.7 | Query existing policies for a switch (idempotency check) |
-| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create` | POST | 1.1, 1.2, 1.5, 1.7 | Create switch policies (features, VLANs, routes, users) |
+| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/switches/{serial}` | GET | 1.2, 1.4, 1.7 | Query existing policies for a switch (idempotency check) |
+| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/policies/bulk-create` | POST | 1.1, 1.2, 1.4, 1.7 | Create switch policies via `cisco.dcnm.dcnm_policy` (features, VLANs, routes, users) |
 | `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/vpcpair` | GET | 1.3 | Query existing VPC pairs |
 | `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/vpcpair` | POST | 1.3 | Create VPC domain pair |
 | `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/vpcpair` | DELETE | 1.3 | Delete VPC pair (cleanup) |
-| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/interface/detail?serialNumber={serial}` | GET | 1.4 | Query existing interfaces on a switch |
-| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/interface?serialNumber={serial}` | GET | 1.6 | Query interface summary for a switch |
-| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/globalInterface` | POST | 1.4, 1.6 | Create/configure interfaces (L2, L3, VPC, SVI) |
+| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/interface/detail?serialNumber={serial}` | GET | 1.5 | Query existing interfaces on a switch |
+| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/interface?serialNumber={serial}` | GET | 1.5 | Query interface summary for a switch |
+| `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/globalInterface` | POST | 1.5 | Create/configure interfaces (L2, L3, VPC, SVI) via `cisco.dcnm.dcnm_interface` |
 | `/api/v1/manage/fabrics/{fabric}/switches` | GET | 1.3 | Query switches in fabric with role filter |
 
 ### B. Policy Templates Reference
@@ -679,13 +684,16 @@ NDFC policy templates used by this project:
 | `feature_tacacs` | Enable TACACS+ feature | 1.2-provision-features |
 | `feature_nxapi` | Enable NX-API feature | 1.2-provision-features |
 | `feature_vpc` | Enable VPC feature | 1.2-provision-features |
-| `create_vlan` | Create VLAN | 1.5-provision-vlan-policies |
-| `static_route_v4_v6` | Static route configuration | 1.6-provision-static-routes |
-| `int_trunk_host` | Ethernet trunk interface | 1.4-provision-interfaces |
-| `int_access_host` | Ethernet access interface | 1.4-provision-interfaces |
-| `int_port_channel_trunk_host` | Port-channel trunk interface | 1.4-provision-interfaces |
-| `int_vpc_trunk_host` | VPC trunk interface | 1.4-provision-interfaces |
-| `int_vlan` | SVI (VLAN interface) | 1.4-provision-interfaces |
+| `create_vlan` | Create VLAN | 1.4-provision-vlan-policies |
+| `static_route_v4_v6` | Static route configuration | 1.7-provision-static-routes |
+| `int_trunk_host` | Ethernet trunk interface | 1.5-provision-interfaces |
+| `int_access_host` | Ethernet access interface | 1.5-provision-interfaces |
+| `int_port_channel_trunk_host` | Port-channel trunk interface | 1.5-provision-interfaces |
+| `int_port_channel_access_host` | Port-channel access interface | 1.5-provision-interfaces |
+| `int_port_channel_trunk_member_11_1` | Port-channel trunk member (auto-assigned by NDFC) | 1.5-provision-interfaces |
+| `int_vpc_trunk_host` | VPC trunk interface | 1.5-provision-interfaces |
+| `int_vpc_access_host` | VPC access interface | 1.5-provision-interfaces |
+| `int_vlan` | SVI (VLAN interface) | 1.5-provision-interfaces |
 
 ### C. Feature Lookup Mapping
 
