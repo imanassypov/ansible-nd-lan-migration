@@ -135,6 +135,11 @@ switches:
 {% endif %}
 {% endfor %}
 {% endif %}
+{% if interface.channel_group is defined %}
+        channel_group:
+          id: {{ interface.channel_group.id }}
+          mode: {{ interface.channel_group.mode | default('on') }}
+{% endif %}
 {% if interface.cdp_enable is defined %}
         cdp_enable: {{ interface.cdp_enable }}
 {% endif %}

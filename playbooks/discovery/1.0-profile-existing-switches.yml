@@ -827,7 +827,7 @@
           switch_ip: "{{ destination_switch_ip_addr if (not (add_to_fabric | default(true) | bool)) and destination_switch_ip_addr is defined else ansible_host }}"
           interfaces: |
             {%- set consolidated = [] -%}
-            {%- set lag_members = [] -%}
+            {%- set peer_link_members = [] -%}
             {%- set peer_link_names = [] -%}
             {%- set lag_info = portchannel_info.ansible_facts.ansible_network_resources.lag_interfaces | default([]) -%}
             {%- set vpc_pc_names = vpc_portchannels | default([]) | map(attribute='port_channel') | list -%}
@@ -835,13 +835,13 @@
             {%- for lag in lag_info -%}
               {%- if lag.name not in vpc_pc_names and vpc_pc_names | length > 0 -%}
                 {%- set _ = peer_link_names.append(lag.name) -%}
+                {%- for member in lag.members | default([]) -%}
+                  {%- set _ = peer_link_members.append(member.member) -%}
+                {%- endfor -%}
               {%- endif -%}
-              {%- for member in lag.members | default([]) -%}
-                {%- set _ = lag_members.append(member.member) -%}
-              {%- endfor -%}
             {%- endfor -%}
             {%- for iface in l2_interface_info.gathered | default([]) -%}
-              {%- if iface.name not in lag_members and iface.name not in peer_link_names and iface.name != 'Vlan1' and iface.name != 'mgmt0' -%}
+              {%- if iface.name not in peer_link_members and iface.name not in peer_link_names and iface.name != 'Vlan1' and iface.name != 'mgmt0' -%}
                 {%- set iface_data = iface | dict2items | items2dict -%}
                 {%- set base_iface = base_intfs | selectattr('name', 'equalto', iface.name) | list -%}
                 {%- if base_iface | length > 0 and base_iface[0].description is defined -%}
@@ -872,6 +872,19 @@
                     {%- set _ = iface_data.update({'vpc_id': vpc_match[0].vpc_id}) -%}
                     {%- set has_config = true -%}
                   {%- endif -%}
+                {%- else -%}
+                  {# Check if this interface is a non-peer-link port-channel member and add channel_group info #}
+                  {%- for lag in lag_info -%}
+                    {%- if lag.name not in peer_link_names -%}
+                      {%- for member in lag.members | default([]) -%}
+                        {%- if member.member == iface.name -%}
+                          {%- set lag_id = lag.name | regex_replace('^port-channel', '') -%}
+                          {%- set _ = iface_data.update({'channel_group': {'id': lag_id | int, 'mode': member.mode | default('on')}}) -%}
+                          {%- set has_config = true -%}
+                        {%- endif -%}
+                      {%- endfor -%}
+                    {%- endif -%}
+                  {%- endfor -%}
                 {%- endif -%}
                 {%- set _ = iface_data.update({'type': iface_type}) -%}
                 {%- if not (add_to_fabric | default(true) | bool) -%}
